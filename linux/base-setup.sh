@@ -1,25 +1,11 @@
 #!/bin/bash
+set -eo pipefail
+
+. $(dirname $0)/shared-lib.sh
 
 # TODO log / check linux distribution
 
 # TODO check effective user (must be run w/ sudo)
-
-function pkgmgr() {
-
-  dist=$(cat /etc/os-release | egrep "^ID=" | awk -F= '{print $2}' | tr -d "\"")
-  if [[ "$dist" == "ubuntu" ]] || [[ "$dist" == "debian" ]]; then
-    pm="apt"
-  elif [[ "$dist" == "centos" ]]; then
-    pm="dnf"
-  else
-    echo "Unsupported distribution: $dist"
-    echo "Exiting..."
-    exit 1
-  fi
-  eval $pm $@
-}
-
-# Main
 
 echo "Checking distribution"
 echo $(cat /etc/os-release)
@@ -49,6 +35,8 @@ if [[ ! -f "/usr/bin/pip" ]]; then
   echo "Creating link to pip3"
   ln -s /usr/bin/pip3 /usr/bin/pip
 fi
+
+echo "NOTE: next run: sudo $(dirname $0)/tools-setup.sh"
 
 echo "Done"
 

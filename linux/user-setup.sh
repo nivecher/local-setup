@@ -1,4 +1,10 @@
 #!/bin/bash
+set -eo pipefail
+
+. $(dirname $0)/shared-lib.sh
+
+downloads="$(dirname $0)/downloads"
+
 #
 # User setup
 #
@@ -31,3 +37,11 @@ if [[ "$default_shell" == "zsh" ]]; then
   fi
 fi
 
+echo "Setting up SSH"
+if [[ -e "$HOME/.ssh" ]]; then
+  echo "$HOME/.ssh exists.  Skipping..."
+else
+  ssh-keygen
+fi
+
+echo "Update your keys in GitHub.com"
