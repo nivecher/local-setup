@@ -4,7 +4,10 @@
 #
 set -eo pipefail
 
-. "$(dirname "$0")"/shared-lib.sh
+SCRIPT_DIR=$(dirname "$(readlink -f "$0")")
+
+. "$SCRIPT_DIR/shared-lib.sh"
+
 
 echo "Running as $USER"
 if [[ "$USER" == "root" ]]; then

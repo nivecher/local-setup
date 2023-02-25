@@ -1,7 +1,9 @@
 #!/bin/bash
 set -eo pipefail
 
-. "$(dirname "$0")"/shared-lib.sh
+SCRIPT_DIR=$(dirname "$(readlink -f "$0")")
+
+. "$SCRIPT_DIR/shared-lib.sh"
 
 # TODO log / check linux distribution
 
@@ -21,7 +23,7 @@ echo "Updating packages"
 pkgmgr update -y
 
 echo "Installing utility packages"
-pkgmgr install -y curl wget zsh mate tree
+pkgmgr install -y curl wget zsh mate tree brew
 
 echo "Installing development packages"
 pkgmgr install -y git-all python3 python3-pip python3-virtualenv
@@ -36,6 +38,6 @@ if [[ ! -f "/usr/bin/pip" ]]; then
 	ln -s /usr/bin/pip3 /usr/bin/pip
 fi
 
-echo "NOTE: next run: $(dirname "$0")/user-setup.sh"
+echo "NOTE: next run: sudo $SCRIPT_DIR/tools-setup.sh"
 
 echo "Done"
