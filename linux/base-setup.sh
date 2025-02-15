@@ -2,8 +2,17 @@
 # Enable strict error handling
 set -eo pipefail
 
-# Source shared library functions
-. $(dirname $0)/shared-lib.sh
+# This script performs base system setup for Linux environments
+# It handles:
+# - Package repository updates
+# - Installation of common utilities and development tools
+# - Python environment configuration
+# - Desktop environment setup (MATE)
+#
+# Must be run with root/sudo privileges
+
+SCRIPT_DIR=$(dirname "$(readlink -f "$0")")
+. "$SCRIPT_DIR/shared-lib.sh"
 
 # TODO log / check linux distribution
 
@@ -11,13 +20,13 @@ set -eo pipefail
 
 # Verify the Linux distribution being used
 echo "Checking distribution"
-echo $(cat /etc/os-release)
+cat /etc/os-release
 
 # Ensure script is run with root privileges
 echo "Checking user"
 if [[ "$USER" != "root" ]]; then
-  echo "Script must be run as root or using sudo!"
-  exit 1
+	echo "Script must be run as root or using sudo!"
+	exit 1
 fi
 
 # Update system package repositories
@@ -31,7 +40,8 @@ echo "Installing utility packages"
 # - zsh: Enhanced shell with better features than bash
 # - mate: Lightweight desktop environment
 # - tree: Directory listing in tree format
-pkgmgr install -y curl wget zsh mate tree
+#
+pkgmgr install -y curl wget zsh mate tree brew
 
 echo "Installing development packages"
 # Core development tools:
@@ -45,15 +55,14 @@ echo "Python setup"
 # Create symbolic links for python and pip if they don't exist
 # This ensures 'python' and 'pip' commands work without version numbers
 if [[ ! -f "/usr/bin/python" ]]; then
-  echo "Creating link to python3"
-  ln -s /usr/bin/python3 /usr/bin/python
+	echo "Creating link to python3"
+	ln -s /usr/bin/python3 /usr/bin/python
 fi
 if [[ ! -f "/usr/bin/pip" ]]; then
-  echo "Creating link to pip3"
-  ln -s /usr/bin/pip3 /usr/bin/pip
+	echo "Creating link to pip3"
+	ln -s /usr/bin/pip3 /usr/bin/pip
 fi
 
-# Inform user about the next script to run
-echo "NOTE: next run: sudo $(dirname $0)/tools-setup.sh"
+echo "NOTE: next run: sudo $SCRIPT_DIR/tools-setup.sh"
 
 echo "Done"
