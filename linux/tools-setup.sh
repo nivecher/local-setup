@@ -16,11 +16,11 @@ echo "Setting up temp dir for downloads"
 mkdir -p temp
 cd temp
 
-echo "Intalling AWS CLI"
-# https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html
-download "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" "awscliv2.zip"
-unzip awscliv2.zip
-./aws/install --bin-dir /usr/local/bin --install-dir /usr/local/aws-cli --update
+# echo "Intalling AWS CLI"
+# # https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html
+# download "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" "awscliv2.zip"
+# unzip awscliv2.zip
+# ./aws/install --bin-dir /usr/local/bin --install-dir /usr/local/aws-cli --update
 
 echo "Installing Terraform"
 # TODO make cross-platform friendly
@@ -37,9 +37,14 @@ echo "deb [signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] \
 sudo apt update
 sudo apt-get install terraform
 
+# echo "Installing Terragrunt"
+# TODO
+
+echo "Installing pre-commit"
+sudo apt-get install pre-commit
+
 # TODO make configurable
 # echo "Cleaning up"
 # rm -rf temp
 
 echo "Done"
-
