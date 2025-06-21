@@ -55,6 +55,18 @@ brew install pre-commit
 echo "Installing pre-commit"
 sudo apt-get install pre-commit
 
+echo "Installing jq"
+brew install jq
+
+echo "Installing yq"
+brew install yq
+
+echo "Installing shfmt"
+brew install shfmt
+
+echo "Installing shellcheck"
+brew install shellcheck
+
 # TODO make configurable
 # echo "Cleaning up"
 # rm -rf temp

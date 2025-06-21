@@ -41,7 +41,7 @@ echo "Checking shell"
 default_shell_path=$(which $default_shell)
 if [[ "$SHELL" != "$default_shell_path" ]]; then
 	echo "Changing default shell from $SHELL to $default_shell"
-	chsh -s "$default_shell_path"
+	sudo chsh "$(id -un)" --shell "$default_shell_path"
 fi
 
 # Install and configure shell extensions
@@ -57,11 +57,19 @@ if [[ "$default_shell" == "zsh" ]]; then
 fi
 
 echo "Installing Homebrew"
-/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-echo '# Set PATH, MANPATH, etc., for Homebrew.' >>"$HOME"/.zprofile
-# Add Homebrew to PATH
-echo "eval \"\$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)\"" >>"$HOME/.zshrc"
-eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
+if [[ -e "/home/linuxbrew/.linuxbrew/bin/brew" ]]; then
+	echo "Homebrew is already installed"
+	echo "Updating Homebrew"
+	/home/linuxbrew/.linuxbrew/bin/brew update
+else
+	echo "Installing Homebrew"
+	/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+	echo '# Set PATH, MANPATH, etc., for Homebrew.' >>"$HOME"/.zprofile
+	# Add Homebrew to PATH
+	echo "eval \"\$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)\"" >>"$HOME/.zshrc"
+	eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
+	export PATH="/home/linuxbrew/.linuxbrew/bin:$PATH"
+fi
 
 echo "Setting up SSH"
 if [[ -e "$HOME/.ssh" ]]; then
