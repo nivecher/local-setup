@@ -53,7 +53,7 @@ brew install pre-commit
 # TODO
 
 echo "Installing pre-commit"
-sudo apt-get install pre-commit
+pkgmgr install -y pre-commit
 
 echo "Installing jq"
 brew install jq

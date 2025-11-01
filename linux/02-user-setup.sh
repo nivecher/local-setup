@@ -36,8 +36,14 @@ if [[ "$USER" == "root" ]]; then
 	exit 1
 fi
 
-# Change default shell if necessary
+# Ensure zsh is installed before changing default shell
 echo "Checking shell"
+if ! command -v $default_shell >/dev/null 2>&1; then
+	echo "$default_shell is not installed. Installing $default_shell..."
+	pkgmgr install -y $default_shell
+fi
+
+# Change default shell if necessary
 default_shell_path=$(which $default_shell)
 if [[ "$SHELL" != "$default_shell_path" ]]; then
 	echo "Changing default shell from $SHELL to $default_shell"
