@@ -1,0 +1,47 @@
+---
+- name: Development Tools Setup
+  hosts: localhost
+  connection: local
+  become: false
+  gather_facts: yes
+
+  vars:
+    brew_path: /home/linuxbrew/.linuxbrew/bin/brew
+    development_tools:
+      - awscli
+      - terraform
+      - terragrunt
+      - pre-commit
+      - gh
+      - jq
+      - yq
+      - shfmt
+      - shellcheck
+
+  tasks:
+    - name: Check if Homebrew is available
+      stat:
+        path: "{{ brew_path }}"
+      register: brew_installed
+
+    - name: Update Homebrew
+      shell: "{{ brew_path }} update"
+      when: brew_installed.stat.exists
+
+    - name: Install development tools via Homebrew
+      shell: "{{ brew_path }} install {{ item }}"
+      loop: "{{ development_tools }}"
+      register: brew_result
+      changed_when: "'already installed' not in brew_result.stdout"
+      failed_when: 
+        - brew_result.rc != 0
+        - "'already installed' not in brew_result.stdout"
+      when: brew_installed.stat.exists
+      loop_control:
+        label: "{{ item }}"
+        pause: 0
+
+    - name: Display completion message
+      debug:
+        msg: "Setup complete! All development tools installed."
+

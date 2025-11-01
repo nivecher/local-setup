@@ -23,6 +23,28 @@ SCRIPT_DIR=$(dirname "$(readlink -f "$0")")
 . "$SCRIPT_DIR/shared-lib.sh"
 
 #
+# Functions
+#
+
+# Setup Oh My Zsh plugins from a separate configuration file
+# Copies the plugin config file to home directory
+# Arguments:
+#   $1 - Path to plugins configuration file in repo
+setup_zsh_plugins() {
+	local repo_plugins_file="$1"
+	local home_plugins_file="$HOME/.zsh-plugins.sh"
+
+	if [[ ! -f "$repo_plugins_file" ]]; then
+		log "WARN" "Plugins configuration file not found: $repo_plugins_file"
+		return 0
+	fi
+
+	# Copy plugins file to home directory
+	log "INFO" "Copying plugin configuration to $home_plugins_file"
+	cp "$repo_plugins_file" "$home_plugins_file"
+}
+
+#
 # User Configuration Settings
 #
 
@@ -60,6 +82,38 @@ if [[ "$default_shell" == "zsh" ]]; then
 		echo "Installing oh-my-zsh"
 		sh -c "$(wget https://raw.github.com/ohmyzsh/ohmyzsh/master/tools/install.sh -O -)"
 	fi
+
+	# Setup Oh My Zsh plugins from configuration file
+	plugins_config="$SCRIPT_DIR/zsh-plugins.sh"
+	if [[ -f "$plugins_config" ]]; then
+		echo "Setting up Oh My Zsh plugins"
+		setup_zsh_plugins "$plugins_config"
+		
+		# Add source line to .zshrc if not already present (right after ZSH_THEME)
+		zshrc_file="$HOME/.zshrc"
+		if [[ -f "$zshrc_file" ]] && ! grep -q "\.zsh-plugins\.sh" "$zshrc_file"; then
+			temp_file=$(mktemp)
+			added=0
+			while IFS= read -r line || [[ -n "$line" ]]; do
+				echo "$line" >>"$temp_file"
+				# Add source line right after ZSH_THEME
+				if [[ "$line" =~ ^ZSH_THEME= ]] && [[ $added -eq 0 ]]; then
+					echo "# Load custom plugin configuration" >>"$temp_file"
+					echo "[ -f ~/.zsh-plugins.sh ] && source ~/.zsh-plugins.sh" >>"$temp_file"
+					added=1
+				fi
+			done <"$zshrc_file"
+			if [[ $added -eq 0 ]]; then
+				# Append if ZSH_THEME not found
+				echo "" >>"$temp_file"
+				echo "# Load custom plugin configuration" >>"$temp_file"
+				echo "[ -f ~/.zsh-plugins.sh ] && source ~/.zsh-plugins.sh" >>"$temp_file"
+			fi
+			mv "$temp_file" "$zshrc_file"
+		fi
+	else
+		log "WARN" "Plugins configuration file not found: $plugins_config"
+	fi
 fi
 
 echo "Installing Homebrew"
@@ -75,6 +129,13 @@ else
 	echo "eval \"\$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)\"" >>"$HOME/.zshrc"
 	eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
 	export PATH="/home/linuxbrew/.linuxbrew/bin:$PATH"
+	
+	# Source .zshrc if running in zsh to apply Homebrew changes
+	if [[ -n "$ZSH_VERSION" ]] && [[ -f "$HOME/.zshrc" ]]; then
+		log "INFO" "Sourcing .zshrc to apply Homebrew configuration"
+		# shellcheck source=~/.zshrc disable=SC1090
+		source "$HOME/.zshrc" 2>/dev/null || true
+	fi
 fi
 
 echo "Setting up SSH"

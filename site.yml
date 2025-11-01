@@ -1,0 +1,5 @@
+---
+- import_playbook: base-setup.yml
+- import_playbook: user-setup.yml
+- import_playbook: tools-setup.yml
+

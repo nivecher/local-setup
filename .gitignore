@@ -1,0 +1,17 @@
+# Ansible
+*.retry
+*.log
+
+# Inventory (localhost only, can be regenerated)
+inventory.ini
+
+# System files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+

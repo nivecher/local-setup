@@ -1,0 +1,49 @@
+---
+- name: Bootstrap System for Ansible
+  hosts: localhost
+  connection: local
+  become: true
+  gather_facts: yes
+
+  tasks:
+    - name: Update package cache
+      package:
+        update_cache: yes
+      when: ansible_os_family in ['Debian', 'RedHat']
+
+    - name: Install essential utilities
+      package:
+        name:
+          - curl
+          - wget
+          - git
+          - gawk
+          - python3
+          - python3-pip
+        state: present
+
+    - name: Check if Ansible is already installed
+      command: which ansible-playbook
+      register: ansible_check
+      failed_when: false
+      changed_when: false
+
+    - name: Install Ansible via pip3
+      pip:
+        name:
+          - ansible
+          - ansible-core
+        executable: pip3
+        state: present
+      when: ansible_check.rc != 0
+
+    - name: Display Ansible version
+      command: ansible-playbook --version
+      register: ansible_version
+      changed_when: false
+      failed_when: false
+
+    - name: Show Ansible installation success
+      debug:
+        msg: "✅ Ansible installed successfully - {{ ansible_version.stdout_lines[0] if ansible_check.rc == 0 else 'via pip3' }}"
+

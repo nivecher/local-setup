@@ -47,13 +47,9 @@ brew install terragrunt
 
 echo "Installing pre-commit"
 brew install pre-commit
-# sudo apt-get install pre-commit
 
-# echo "Installing Terragrunt"
-# TODO
-
-echo "Installing pre-commit"
-pkgmgr install -y pre-commit
+echo "Installing GitHub CLI"
+brew install gh
 
 echo "Installing jq"
 brew install jq

@@ -1,0 +1,99 @@
+---
+- name: User Configuration Setup
+  hosts: localhost
+  connection: local
+  become: false
+  gather_facts: yes
+
+  vars:
+    username: "{{ ansible_user_id }}"
+    default_shell: zsh
+    zsh_path: /usr/bin/zsh
+
+  tasks:
+    - name: Ensure zsh is installed
+      package:
+        name: zsh
+        state: present
+      become: true
+
+    - name: Get current shell
+      shell: "getent passwd {{ username }} | cut -d: -f7"
+      register: current_shell
+      changed_when: false
+
+    - name: Change default shell to zsh
+      shell: "chsh {{ username }} --shell {{ zsh_path }}"
+      become: true
+      when: current_shell.stdout != zsh_path
+
+    - name: Install Oh My Zsh
+      shell: sh -c "{{ item }}"
+      args:
+        creates: "{{ ansible_env.HOME }}/.oh-my-zsh"
+      environment:
+        RUNZSH: no
+        CHSH: no
+      loop:
+        - "wget https://raw.github.com/ohmyzsh/ohmyzsh/master/tools/install.sh -O -"
+      loop_control:
+        label: "Oh My Zsh installer"
+
+    - name: Copy zsh plugins configuration
+      copy:
+        src: linux/zsh-plugins.sh
+        dest: "{{ ansible_env.HOME }}/.zsh-plugins.sh"
+        mode: '0644'
+
+    - name: Ensure plugin source line in .zshrc
+      lineinfile:
+        path: "{{ ansible_env.HOME }}/.zshrc"
+        regexp: '\.zsh-plugins\.sh'
+        line: '[ -f ~/.zsh-plugins.sh ] && source ~/.zsh-plugins.sh'
+        insertafter: '^ZSH_THEME='
+        state: present
+        backup: yes
+
+    - name: Check if Homebrew is installed
+      stat:
+        path: /home/linuxbrew/.linuxbrew/bin/brew
+      register: homebrew_check
+
+    - name: Install Homebrew (Linux)
+      shell: /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+      environment:
+        NONINTERACTIVE: 1
+      when: not homebrew_check.stat.exists
+
+    - name: Add Homebrew to PATH in .zprofile
+      lineinfile:
+        path: "{{ ansible_env.HOME }}/.zprofile"
+        line: 'eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"'
+        regexp: 'brew shellenv'
+        state: present
+
+    - name: Add Homebrew to PATH in .zshrc
+      lineinfile:
+        path: "{{ ansible_env.HOME }}/.zshrc"
+        line: 'eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"'
+        regexp: 'brew shellenv'
+        state: present
+
+    - name: Check if SSH directory exists
+      stat:
+        path: "{{ ansible_env.HOME }}/.ssh"
+      register: ssh_dir
+
+    - name: Generate SSH key
+      openssh_keypair:
+        path: "{{ ansible_env.HOME }}/.ssh/id_rsa"
+        type: rsa
+        comment: "{{ username }}@{{ ansible_hostname }}"
+        force: false
+      when: ssh_dir.stat.exists or ssh_dir.stat.exists == false
+      ignore_errors: yes
+
+    - name: Remind about GitHub keys
+      debug:
+        msg: "Don't forget to add your SSH key to GitHub!"
+

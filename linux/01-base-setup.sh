@@ -40,8 +40,9 @@ echo "Installing utility packages"
 # - zsh: Enhanced shell with better features than bash
 # - mate: Lightweight desktop environment
 # - tree: Directory listing in tree format
+# - gawk: GNU awk text processing tool
 #
-pkgmgr install -y curl wget zsh mate tree
+pkgmgr install -y curl wget zsh mate tree gawk
 
 echo "Installing development packages"
 # Core development tools:
