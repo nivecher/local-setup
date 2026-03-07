@@ -121,12 +121,17 @@ if ! command -v ansible-playbook &>/dev/null; then
     exit 1
 fi
 
-# Check if inventory.ini exists, create if not
-if [[ ! -f inventory.ini ]]; then
-    print_info "Creating inventory.ini..."
-    cat > inventory.ini <<'EOF'
-[local]
-localhost ansible_connection=local
+# Check if inventory exists, create if not
+if [[ ! -f inventory/hosts.yml ]]; then
+    print_info "Creating inventory/hosts.yml..."
+    mkdir -p inventory
+    cat > inventory/hosts.yml <<'EOF'
+---
+all:
+  hosts:
+    localhost:
+      ansible_connection: local
+      ansible_python_interpreter: "{{ ansible_playbook_python }}"
 EOF
 fi
 
@@ -145,9 +150,16 @@ if [[ -z "${CI:-}" ]]; then
     fi
 fi
 
+# Install required collections
+print_info "Installing required Ansible collections..."
+if [[ -f requirements.yml ]]; then
+    ansible-galaxy collection install -r requirements.yml
+fi
+
 # Run the complete setup using site.yml
 print_info "Running complete setup via site.yml..."
-if ansible-playbook site.yml; then
+print_info "You may be prompted for your sudo password (system setup requires it)"
+if ansible-playbook site.yml --ask-become-pass; then
     print_info ""
     print_info "✅ Setup complete!"
     print_info ""
