@@ -1,10 +1,8 @@
-# local-setup
+# Local Development Environment Setup
 
-Local setup for development for various platforms
+Simple, standard Ansible setup for local development environments.
 
-## Quick Start 🚀
-
-Get started in 2 minutes:
+## 🚀 Quick Start
 
 ```bash
 git clone <repo-url>
@@ -12,83 +10,104 @@ cd local-setup
 ./bootstrap.sh
 ```
 
-That's it! See [QUICKSTART.md](QUICKSTART.md) for details.
+## 📁 Structure
 
-The bootstrap script automatically:
-1. Detects your OS (Debian/Ubuntu, Fedora/RHEL, Arch, etc.)
-2. Installs Ansible if needed
-3. Installs all base packages and utilities (including gawk)
-4. Configures your shell (zsh + Oh My Zsh)
-5. Installs development tools
-
-## Manual Setup Options
-
-### Option 1: Ansible (Recommended) ⭐
-
-If Ansible is already installed:
-
-```bash
-# Run everything
-ansible-playbook site.yml
-
-# Or run individual parts
-sudo ansible-playbook base-setup.yml
-ansible-playbook user-setup.yml
-ansible-playbook tools-setup.yml
-
-# Test without making changes
-ansible-playbook site.yml --check --diff
+```
+local-setup/
+├── site.yml              # Main playbook (runs all)
+├── playbooks/            # Playbook directory (Ansible standard)
+│   ├── system.yml        # System packages (requires sudo)  
+│   ├── user.yml          # User config (shell, python, ssh)
+│   └── tools.yml         # Development tools (homebrew)
+├── vars/main.yml         # Configuration
+├── inventory/hosts.yml   # Inventory
+├── ansible.cfg           # Ansible config
+├── requirements.yml      # Required collections
+└── linux/zsh-plugins.sh # Shell plugins
 ```
 
-**Why Ansible?** Idempotent, testable with `--check`, better error handling, easier to extend.
+## 🎯 What Gets Installed
 
-### Option 2: Shell Scripts (Legacy)
+- **System**: Base packages, build tools, Python 3
+- **Shell**: zsh + Oh My Zsh with custom theme
+- **Python**: pyenv + Python 3.13.9  
+- **Tools**: AWS CLI, Terraform, GitHub CLI, Node.js, Go, etc.
+- **SSH**: 4096-bit RSA key generation
 
-Original bash-based setup. Still works but less robust.
+## 🔧 Configuration
 
-```bash
-# Base Setup - Update O/S packages, setup languages, etc.
-sudo ./linux/01-base-setup.sh
+Edit `vars/main.yml`:
 
-# User Setup - User specific setup (executed as user, not system)
-./linux/02-user-setup.sh
+```yaml
+python_version: "3.13.9"
+zsh_theme: "robbyrussell"
 
-# Tools Setup - Install / update developer tools
-./linux/03-tools-setup.sh
+# Tool versions - YOU control when to upgrade
+# Format: tool_name: version (null = latest, no pin)
+development_tools:
+  terraform: "1.5.7"   # tfenv - change this to upgrade
+  node: "18"           # node@18 - use "18", "20", "22" for versioned
+  awscli: null         # latest, no pin
+  gh: null
+  # ...
 ```
 
-**Warning:** Scripts are not idempotent - re-running may cause issues.
+## 📖 Usage
 
-## What Gets Installed
+```bash
+# Full setup (prompts for sudo password)
+ansible-playbook site.yml --ask-become-pass
 
-### Base System
-- curl, wget, git, tree, gawk
-- Python 3 with pip and virtualenv
-- zsh shell
+# Individual parts
+ansible-playbook playbooks/system.yml --ask-become-pass   # System (sudo required)
+ansible-playbook playbooks/user.yml      # User config
+ansible-playbook playbooks/tools.yml     # Development tools
 
-### User Configuration
-- Oh My Zsh with plugins (git, aws, docker, kubectl, terraform)
-- Homebrew for Linux
-- SSH key generation
+# Validate tool versions (check for upgrades)
+make validate
 
-### Development Tools
-- AWS CLI
-- Terraform & Terragrunt
-- GitHub CLI
-- pre-commit
-- jq, yq
-- shfmt, shellcheck
+# Preview changes
+ansible-playbook site.yml --check --diff --ask-become-pass
 
-## Platform Support
+# Test syntax
+ansible-playbook site.yml --syntax-check
+```
 
-- ✅ Linux (Debian, Ubuntu, Fedora, RHEL, CentOS, Rocky, Arch, Manjaro, openSUSE)
-- ⚠️ Windows (PowerShell script available in `windows/`)
+## ✅ Features
 
-## Documentation
+- **Simple**: 3 playbooks, minimal structure
+- **Standard**: Follows Ansible best practices
+- **Idempotent**: Safe to run multiple times
+- **Cross-platform**: Ubuntu/Debian + Fedora/RHEL
+- **No duplication**: Single source of truth
 
-- **[Quick Start](QUICKSTART.md)** - Get started in 2 minutes
-- **[Installation Guide](INSTALL.md)** - Complete instructions with troubleshooting
-- [Ansible Setup Guide](README-ANSIBLE.md) - Detailed Ansible usage
-- [Side-by-Side Comparison](COMPARISON.md) - Shell Scripts vs Ansible
-- [Linux Scripts](linux/) - Original shell scripts
-- [Windows Setup](windows/) - PowerShell scripts
+## 🛠️ Tool Version Control
+
+- **Pin versions**: Set version in `vars/main.yml` (e.g. `terraform: "1.5.7"`)
+- **Upgrade**: Change the version, run setup again
+- **Validate**: `make validate` to see installed vs available versions
+- **Terraform**: Uses tfenv; set exact version (e.g. `"1.5.7"`)
+- **Node**: Use `"18"`, `"20"`, `"22"` for node@18, etc.
+- **Others**: Set version to pin (locks current), `null` for latest
+
+## 🆘 Troubleshooting
+
+- **"sudo: a password is required"**: Add `--ask-become-pass` (or `-K`) to prompt for your sudo password
+- **Syntax errors**: `ansible-playbook site.yml --syntax-check`
+- **Preview changes**: `ansible-playbook site.yml --check --diff --ask-become-pass`  
+- **Verbose output**: `ansible-playbook site.yml -v`
+
+## 📋 Requirements
+
+- Linux (Ubuntu/Debian or Fedora/RHEL)
+- Internet connection
+- sudo access for system setup
+
+Bootstrap script installs Ansible automatically.
+
+## 📜 Legacy Scripts
+
+The `linux/` and `windows/` directories contain the original shell scripts for reference:
+- **Recommended**: Use Ansible setup (`./bootstrap.sh` or `make install`)
+- **Legacy**: Shell scripts available in `linux/` directory
+- **Windows**: PowerShell setup available in `windows/` directory

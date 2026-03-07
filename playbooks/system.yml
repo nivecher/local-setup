@@ -1,0 +1,97 @@
+---
+- name: System Setup (requires sudo)
+  hosts: localhost
+  connection: local
+  become: true
+  gather_facts: true
+
+  vars_files:
+    - ../vars/main.yml
+
+  tasks:
+    - name: Update package cache
+      ansible.builtin.package:
+        update_cache: true
+      when: ansible_facts['os_family'] in ['Debian', 'RedHat']
+
+    - name: Install base packages
+      ansible.builtin.package:
+        name: "{{ base_packages }}"
+        state: present
+
+    - name: Install pyenv build dependencies (Debian/Ubuntu)
+      ansible.builtin.package:
+        name:
+          - make
+          - build-essential
+          - libssl-dev
+          - zlib1g-dev
+          - libbz2-dev
+          - libreadline-dev
+          - libsqlite3-dev
+          - wget
+          - curl
+          - llvm
+          - libncursesw5-dev
+          - xz-utils
+          - tk-dev
+          - libxml2-dev
+          - libxmlsec1-dev
+          - libffi-dev
+          - liblzma-dev
+        state: present
+      when: ansible_facts['os_family'] == "Debian"
+
+    - name: Install pyenv build dependencies (RedHat/Fedora)
+      ansible.builtin.package:
+        name:
+          - make
+          - gcc
+          - gcc-c++
+          - openssl-devel
+          - zlib-devel
+          - bzip2-devel
+          - readline-devel
+          - sqlite-devel
+          - wget
+          - curl
+          - llvm
+          - ncurses-devel
+          - xz
+          - tk-devel
+          - libxml2-devel
+          - xmlsec1-devel
+          - libffi-devel
+          - xz-devel
+        state: present
+      when: ansible_facts['os_family'] == "RedHat"
+
+    - name: Install minimal Python (Debian/Ubuntu)
+      ansible.builtin.package:
+        name:
+          - python3-minimal
+          - python3-pip
+        state: present
+      when: ansible_facts['os_family'] == "Debian"
+
+    - name: Install minimal Python (RedHat/Fedora)
+      ansible.builtin.package:
+        name:
+          - python3
+          - python3-pip
+        state: present
+      when: ansible_facts['os_family'] == "RedHat"
+
+    - name: Create python symlink
+      ansible.builtin.file:
+        src: "/usr/bin/python3"
+        dest: "/usr/bin/python"
+        state: link
+      when: not ansible_check_mode
+
+    - name: Create pip symlink
+      ansible.builtin.file:
+        src: "/usr/bin/pip3"
+        dest: "/usr/bin/pip"
+        state: link
+      when: not ansible_check_mode

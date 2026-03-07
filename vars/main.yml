@@ -1,0 +1,46 @@
+---
+# Main configuration variables for local development setup
+
+# Python Configuration
+python_version: "3.13.9"   # Python version to install via pyenv
+
+# Shell Configuration
+default_shell: zsh
+zsh_theme: "robbyrussell"   # Oh My Zsh theme
+
+# User Configuration
+username: "{{ ansible_facts['user_id'] }}"
+zsh_path: /usr/bin/zsh
+
+# Development Tools - YOU CONTROL VERSIONS HERE
+# Format: tool_name: version
+#   - "1.5.0" = pin to this version (upgrade by changing this and re-running)
+#   - null = install latest, no pin (upgrades on each run)
+#
+# Terraform: uses tfenv, version required (e.g. "1.5.7")
+# Node: use "18", "20", "22" for node@18, node@20, etc.
+# Others: version pins via brew pin after install
+development_tools:
+  awscli: null
+  terraform: "1.14.5"
+  terragrunt: "0.99.2"
+  pre-commit: null
+  gh: null
+  jq: null
+  yq: null
+  shfmt: null
+  shellcheck: null
+  node: null
+  go: null
+
+# System packages (OS-specific, defined in roles)
+base_packages:
+  - curl
+  - wget
+  - git
+  - tree
+  - gawk
+  - zsh
+
+# Homebrew configuration
+homebrew_install_path: /home/linuxbrew/.linuxbrew

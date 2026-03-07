@@ -1,0 +1,232 @@
+---
+- name: User Configuration
+  hosts: localhost
+  connection: local
+  become: false
+  gather_facts: true
+
+  vars_files:
+    - ../vars/main.yml
+
+  vars:
+    user_home: "{{ lookup('env', 'HOME') }}"
+
+  tasks:
+    # Shell Configuration
+    - name: Ensure zsh is installed
+      ansible.builtin.package:
+        name: zsh
+        state: present
+      become: true
+
+    - name: Change default shell to zsh
+      ansible.builtin.shell: |
+        set -o pipefail
+        CURRENT_SHELL=$(getent passwd {{ username }} | cut -d: -f7)
+        if [ "$CURRENT_SHELL" != "{{ zsh_path }}" ]; then
+          chsh {{ username }} --shell {{ zsh_path }}
+          echo "Shell changed"
+        else
+          echo "Shell already correct"
+        fi
+      become: true
+      register: shell_change
+      changed_when: shell_change.stdout is search("Shell changed")
+
+    - name: Check if Oh My Zsh is installed
+      ansible.builtin.stat:
+        path: "{{ user_home }}/.oh-my-zsh"
+      register: ohmyzsh_exists
+
+    - name: Install Oh My Zsh
+      ansible.builtin.shell: |
+        set -o pipefail
+        # Use curl if available, fallback to wget
+        if command -v curl >/dev/null 2>&1; then
+          ZSH="" sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)"
+        elif command -v wget >/dev/null 2>&1; then
+          ZSH="" sh -c "$(wget https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh -O -)"
+        else
+          echo "Neither curl nor wget available"
+          exit 1
+        fi
+      environment:
+        RUNZSH: "no"
+        CHSH: "no"
+        ZSH: ""
+      when: not ohmyzsh_exists.stat.exists
+
+    - name: Copy zsh plugins configuration
+      ansible.builtin.copy:
+        src: ../linux/zsh-plugins.sh
+        dest: "{{ user_home }}/.zsh-plugins.sh"
+        mode: '0644'
+
+    - name: Configure Oh My Zsh theme in .zshrc
+      ansible.builtin.lineinfile:
+        path: "{{ user_home }}/.zshrc"
+        regexp: "^ZSH_THEME="
+        line: "ZSH_THEME=\"{{ zsh_theme }}\""
+        create: true
+        mode: '0644'
+
+    - name: Configure Oh My Zsh plugins in .zshrc
+      ansible.builtin.lineinfile:
+        path: "{{ user_home }}/.zshrc"
+        regexp: "^plugins="
+        line: "plugins=(git)"
+        create: true
+
+    - name: Source Oh My Zsh
+      ansible.builtin.lineinfile:
+        path: "{{ user_home }}/.zshrc"
+        regexp: "^source.*oh-my-zsh.sh"
+        line: "source $ZSH/oh-my-zsh.sh"
+        create: true
+
+    - name: Source custom plugins
+      ansible.builtin.lineinfile:
+        path: "{{ user_home }}/.zshrc"
+        regexp: '.zsh-plugins.sh'
+        line: '[ -f ~/.zsh-plugins.sh ] && source ~/.zsh-plugins.sh'
+        create: true
+
+    - name: Add pyenv to PATH in .zshrc
+      ansible.builtin.lineinfile:
+        path: "{{ user_home }}/.zshrc"
+        regexp: '^export PYENV_ROOT='
+        line: 'export PYENV_ROOT="$HOME/.pyenv"'
+        create: true
+
+    - name: Add pyenv init in .zshrc
+      ansible.builtin.lineinfile:
+        path: "{{ user_home }}/.zshrc"
+        regexp: 'pyenv init'
+        line: 'eval "$(pyenv init -)"'
+        create: true
+
+    - name: Add pyenv init --path in .zshrc
+      ansible.builtin.lineinfile:
+        path: "{{ user_home }}/.zshrc"
+        regexp: 'pyenv init --path'
+        line: 'eval "$(pyenv init --path)"'
+        create: true
+
+    - name: Add Homebrew shellenv to .zshrc
+      ansible.builtin.lineinfile:
+        path: "{{ user_home }}/.zshrc"
+        regexp: 'brew shellenv'
+        line: 'eval "$({{ homebrew_install_path }}/bin/brew shellenv)"'
+        create: true
+
+    - name: Add .local/bin to PATH in .zshrc
+      ansible.builtin.lineinfile:
+        path: "{{ user_home }}/.zshrc"
+        regexp: '\.local/bin.*PATH'
+        line: 'export PATH="$HOME/.local/bin:$PATH"'
+        create: true
+
+    - name: Add browser helper to .zshrc
+      ansible.builtin.lineinfile:
+        path: "{{ user_home }}/.zshrc"
+        regexp: '^export BROWSER='
+        line: 'export BROWSER="$HOME/.local/bin/browser-helper"'
+        create: true
+
+    # Homebrew
+    - name: Check if Homebrew exists
+      ansible.builtin.stat:
+        path: "{{ homebrew_install_path }}/bin/brew"
+      register: homebrew_exists
+
+    - name: Install Homebrew
+      ansible.builtin.shell: |
+        set -o pipefail
+        /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+      environment:
+        NONINTERACTIVE: "1"
+      when: not homebrew_exists.stat.exists
+      register: homebrew_install_result
+      changed_when: homebrew_install_result.rc == 0
+
+    # pyenv and Python
+    - name: Check if pyenv is installed
+      ansible.builtin.stat:
+        path: "{{ user_home }}/.pyenv"
+      register: pyenv_exists
+
+    - name: Install pyenv
+      ansible.builtin.shell: |
+        set -o pipefail
+        curl https://pyenv.run | bash
+      when: not pyenv_exists.stat.exists
+
+    - name: Check if Python version is installed
+      ansible.builtin.shell: |
+        set -o pipefail
+        export PATH="$HOME/.pyenv/bin:$PATH"
+        eval "$(pyenv init --path)" 2>/dev/null || true
+        eval "$(pyenv init -)" 2>/dev/null || true
+        pyenv versions --bare | grep -x "{{ python_version }}" || echo "not_installed"
+      register: python_check
+      changed_when: false
+
+    - name: Install Python version via pyenv
+      ansible.builtin.shell: |
+        set -o pipefail
+        export PATH="$HOME/.pyenv/bin:$PATH"
+        eval "$(pyenv init --path)"
+        eval "$(pyenv init -)"
+        pyenv install {{ python_version }}
+        pyenv global {{ python_version }}
+      when: python_check.stdout == "not_installed"
+      register: python_install_result
+      changed_when: python_install_result.rc == 0
+
+    # SSH
+    - name: Create .ssh directory
+      ansible.builtin.file:
+        path: "{{ user_home }}/.ssh"
+        state: directory
+        mode: '0700'
+
+    - name: Check if SSH key exists
+      ansible.builtin.stat:
+        path: "{{ user_home }}/.ssh/id_rsa"
+      register: ssh_key_exists
+
+    - name: Generate SSH key
+      ansible.builtin.user:
+        name: "{{ username }}"
+        generate_ssh_key: true
+        ssh_key_type: rsa
+        ssh_key_bits: 4096
+        ssh_key_file: "{{ user_home }}/.ssh/id_rsa"
+        ssh_key_comment: "{{ username }}@{{ ansible_facts['hostname'] }}"
+      when: not ssh_key_exists.stat.exists
+
+    # Directories and helpers
+    - name: Create .local/bin directory
+      ansible.builtin.file:
+        path: "{{ user_home }}/.local/bin"
+        state: directory
+        mode: '0755'
+
+    - name: Create browser helper
+      ansible.builtin.copy:
+        dest: "{{ user_home }}/.local/bin/browser-helper"
+        content: |
+          #!/bin/bash
+          echo "📋 Copy this URL: $1"
+        mode: '0755'
+
+    - name: Create browser symlinks
+      ansible.builtin.file:
+        src: "{{ user_home }}/.local/bin/browser-helper"
+        dest: "{{ user_home }}/.local/bin/{{ item }}"
+        state: link
+      loop:
+        - xdg-open
+        - x-www-browser
+        - www-browser
+        - wslview

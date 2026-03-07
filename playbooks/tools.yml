@@ -1,0 +1,182 @@
+---
+# Development Tools - Version-pinned, upgrade on your terms
+# Edit vars/main.yml development_tools to set versions. Run setup to apply.
+# Run 'make validate' to check if upgrades are available.
+- name: Development Tools
+  hosts: localhost
+  connection: local
+  become: false
+  gather_facts: true
+
+  vars_files:
+    - ../vars/main.yml
+
+  vars:
+    brew_bin: "{{ homebrew_install_path }}/bin/brew"
+    brew_path: "{{ homebrew_install_path }}"
+    user_home: "{{ lookup('env', 'HOME') }}"
+
+  tasks:
+    - name: Check if Homebrew is functional
+      ansible.builtin.command: "{{ brew_bin }} --version"
+      register: brew_check
+      changed_when: false
+      failed_when: false
+      tags: [audit, validate]
+
+    - name: Update Homebrew
+      ansible.builtin.command: "{{ brew_bin }} update"
+      when: brew_check.rc == 0
+      register: brew_update
+      changed_when: "'Already up-to-date' not in (brew_update.stdout | default(''))"
+
+    # --- Terraform via tfenv (version-pinned) ---
+    - name: Uninstall Terraform from Homebrew (using tfenv instead)
+      ansible.builtin.command: "{{ brew_bin }} uninstall terraform"
+      when:
+        - brew_check.rc == 0
+        - development_tools.terraform is defined
+        - development_tools.terraform | length > 0
+      register: brew_uninstall_terraform
+      changed_when: brew_uninstall_terraform.rc == 0
+      failed_when: false
+
+    - name: Install tfenv for Terraform version control
+      ansible.builtin.command: "{{ brew_bin }} install tfenv"
+      when: brew_check.rc == 0 and development_tools.terraform is defined
+      register: tfenv_install
+      changed_when: "'already installed' not in ((tfenv_install.stdout | default('')) + (tfenv_install.stderr | default('')))"
+      failed_when: tfenv_install.rc != 0
+
+    - name: Add tfenv init to shell config
+      ansible.builtin.lineinfile:
+        path: "{{ user_home }}/.zshrc"
+        line: 'eval "$({{ brew_path }}/bin/tfenv init -)"'
+        insertafter: "brew shellenv"
+        create: false
+      when:
+        - brew_check.rc == 0
+        - development_tools.terraform is defined
+        - development_tools.terraform | length > 0
+
+    - name: Install Terraform version via tfenv
+      ansible.builtin.shell: |
+        set -o pipefail
+        eval "$({{ brew_bin }} shellenv)"
+        export PATH="{{ brew_path }}/bin:$PATH"
+        tfenv install {{ development_tools.terraform }}
+        tfenv use {{ development_tools.terraform }}
+      when:
+        - brew_check.rc == 0
+        - development_tools.terraform is defined
+        - development_tools.terraform | length > 0
+      register: tfenv_terraform
+      changed_when: tfenv_terraform.rc == 0
+      failed_when: false
+
+    # --- Homebrew tools (excluding terraform - uses tfenv) ---
+    - name: Install Homebrew tool
+      ansible.builtin.command: >-
+        {{ brew_bin }} install
+        {% if tool_version and tool_name == 'node' %}node@{{ tool_version }}{% else %}{{ tool_name }}{% endif %}
+      loop_control:
+        label: "{{ tool_name }}{% if tool_version and tool_name == 'node' %}@{{ tool_version }}{% endif %}"
+      when:
+        - brew_check.rc == 0
+        - tool_name != 'terraform'
+      vars:
+        tool_name: "{{ item.key }}"
+        tool_version: "{{ item.value }}"
+      loop: "{{ development_tools | dict2items }}"
+      register: brew_install
+      changed_when: "'already installed' not in ((brew_install.stdout | default('')) + (brew_install.stderr | default('')))"
+      failed_when: >-
+        brew_install.rc != 0 and
+        'already installed' not in ((brew_install.stdout | default('')) + (brew_install.stderr | default('')))
+
+    - name: Pin Homebrew tool to version
+      ansible.builtin.command: "{{ brew_bin }} pin {{ item.key }}{% if item.value and item.key == 'node' %}@{{ item.value }}{% endif %}"
+      loop: "{{ development_tools | dict2items }}"
+      when:
+        - brew_check.rc == 0
+        - item.key != "terraform"
+        - item.value is not none
+        - (item.value | string | length) > 0
+      register: brew_pin
+      changed_when: brew_pin.rc == 0
+      failed_when: false
+
+    # --- Validation ---
+    - name: Get Terraform version
+      ansible.builtin.shell: |
+        set -o pipefail
+        eval "$({{ brew_bin }} shellenv)"
+        export PATH="{{ brew_path }}/bin:$PATH"
+        terraform version 2>/dev/null | head -1
+      when:
+        - brew_check.rc == 0
+        - development_tools.terraform is defined
+      register: terraform_version
+      changed_when: false
+      failed_when: false
+      tags: [audit, validate]
+
+    - name: Get Homebrew tool versions
+      ansible.builtin.command: "{{ brew_bin }} list --versions {{ item.key }}{% if item.value and item.key == 'node' %}@{{ item.value }}{% endif %}"
+      loop: "{{ development_tools | dict2items | selectattr('key', 'ne', 'terraform') | list }}"
+      when: brew_check.rc == 0
+      register: brew_versions
+      changed_when: false
+      failed_when: false
+      tags: [audit, validate]
+
+    - name: Get outdated Homebrew packages
+      ansible.builtin.command: "{{ brew_bin }} outdated"
+      when: brew_check.rc == 0
+      register: brew_outdated
+      changed_when: false
+      failed_when: false
+      tags: [audit, validate]
+
+    - name: Get available Terraform versions
+      ansible.builtin.shell: |
+        set -o pipefail
+        eval "$({{ brew_bin }} shellenv)"
+        export PATH="{{ brew_path }}/bin:$PATH"
+        tfenv list-remote 2>/dev/null | head -5
+      when:
+        - brew_check.rc == 0
+        - development_tools.terraform is defined
+      register: terraform_available
+      changed_when: false
+      failed_when: false
+      tags: [validate]
+
+    - name: Validate tool versions
+      ansible.builtin.debug:
+        msg: |
+          Tool versions (edit vars/main.yml to change, then run setup):
+
+          {% if development_tools.terraform is defined and development_tools.terraform %}
+          terraform: pinned={{ development_tools.terraform }}
+            {{ terraform_version.stdout | default('installed: (check failed)') | trim }}
+          {% if terraform_available.stdout %}  available: {{ terraform_available.stdout.split('\n')[0] }}{% endif %}
+          {% endif %}
+
+          {% for r in brew_versions.results if r is defined and not r.skipped | default(false) %}
+          {{ r.item.key }}: pinned={{ r.item.value | default("latest") }}
+            {{ r.stdout | default("not installed") | trim }}
+          {% endfor %}
+
+          {% if brew_outdated.stdout is defined and brew_outdated.stdout | length > 0 %}
+          Outdated (update vars/main.yml version, then run setup): {{ brew_outdated.stdout.split('\n') | select() | join(', ') }}
+          {% endif %}
+      when: brew_check.rc == 0
+      tags: [audit, validate]
+
+    - name: Display completion message
+      ansible.builtin.debug:
+        msg: |
+          Setup complete! Tool versions in vars/main.yml.
+          Run 'make validate' to check for available upgrades.
+      when: brew_check.rc == 0
