@@ -39,6 +39,11 @@ setup_zsh_plugins() {
 		return 0
 	fi
 
+	if [[ -f "$home_plugins_file" ]]; then
+		log "INFO" "Plugin configuration already exists at $home_plugins_file; leaving it unchanged"
+		return 0
+	fi
+
 	# Copy plugins file to home directory
 	log "INFO" "Copying plugin configuration to $home_plugins_file"
 	cp "$repo_plugins_file" "$home_plugins_file"

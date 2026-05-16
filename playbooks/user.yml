@@ -4,6 +4,9 @@
   connection: local
   become: false
   gather_facts: true
+  module_defaults:
+    ansible.builtin.shell:
+      executable: /bin/bash
 
   vars_files:
     - ../vars/main.yml
@@ -13,11 +16,28 @@
 
   tasks:
     # Shell Configuration
-    - name: Ensure zsh is installed
-      ansible.builtin.package:
-        name: zsh
-        state: present
+    - name: Check if zsh exists
+      ansible.builtin.stat:
+        path: "{{ zsh_path }}"
+      register: zsh_exists
+
+    - name: Install zsh with system package manager
+      ansible.builtin.raw: |
+        set -e
+        if command -v apt-get >/dev/null 2>&1; then
+          export DEBIAN_FRONTEND=noninteractive
+          apt-get install -y zsh
+        elif command -v dnf >/dev/null 2>&1; then
+          dnf install -y zsh
+        elif command -v yum >/dev/null 2>&1; then
+          yum install -y zsh
+        else
+          echo "No supported package manager found" >&2
+          exit 1
+        fi
       become: true
+      changed_when: false
+      when: not zsh_exists.stat.exists
 
     - name: Change default shell to zsh
       ansible.builtin.shell: |
@@ -61,6 +81,7 @@
         src: ../linux/zsh-plugins.sh
         dest: "{{ user_home }}/.zsh-plugins.sh"
         mode: '0644'
+        force: false
 
     - name: Configure Oh My Zsh theme in .zshrc
       ansible.builtin.lineinfile:
@@ -70,25 +91,46 @@
         create: true
         mode: '0644'
 
-    - name: Configure Oh My Zsh plugins in .zshrc
+    - name: Check for existing Oh My Zsh plugins in .zshrc
+      ansible.builtin.command:
+        argv:
+          - grep
+          - -Eq
+          - "^plugins="
+          - "{{ user_home }}/.zshrc"
+      register: zshrc_plugins
+      changed_when: false
+      failed_when: false
+
+    - name: Add default Oh My Zsh plugins in .zshrc
       ansible.builtin.lineinfile:
         path: "{{ user_home }}/.zshrc"
-        regexp: "^plugins="
         line: "plugins=(git)"
+        insertafter: "^ZSH_THEME="
         create: true
+      when: zshrc_plugins.rc != 0
+
+    - name: Remove misplaced custom plugin source
+      ansible.builtin.lineinfile:
+        path: "{{ user_home }}/.zshrc"
+        regexp: '.zsh-plugins.sh'
+        state: absent
+      when: zshrc_plugins.rc != 0
+
+    - name: Source custom plugins before Oh My Zsh
+      ansible.builtin.lineinfile:
+        path: "{{ user_home }}/.zshrc"
+        regexp: '.zsh-plugins.sh'
+        line: '[ -f ~/.zsh-plugins.sh ] && source ~/.zsh-plugins.sh'
+        insertbefore: "^source.*oh-my-zsh.sh"
+        create: true
+      when: zshrc_plugins.rc != 0
 
     - name: Source Oh My Zsh
       ansible.builtin.lineinfile:
         path: "{{ user_home }}/.zshrc"
         regexp: "^source.*oh-my-zsh.sh"
         line: "source $ZSH/oh-my-zsh.sh"
-        create: true
-
-    - name: Source custom plugins
-      ansible.builtin.lineinfile:
-        path: "{{ user_home }}/.zshrc"
-        regexp: '.zsh-plugins.sh'
-        line: '[ -f ~/.zsh-plugins.sh ] && source ~/.zsh-plugins.sh'
         create: true
 
     - name: Add pyenv to PATH in .zshrc
@@ -193,17 +235,42 @@
     - name: Check if SSH key exists
       ansible.builtin.stat:
         path: "{{ user_home }}/.ssh/id_rsa"
-      register: ssh_key_exists
+      register: ssh_private_key
 
-    - name: Generate SSH key
-      ansible.builtin.user:
-        name: "{{ username }}"
-        generate_ssh_key: true
-        ssh_key_type: rsa
-        ssh_key_bits: 4096
-        ssh_key_file: "{{ user_home }}/.ssh/id_rsa"
-        ssh_key_comment: "{{ username }}@{{ ansible_facts['hostname'] }}"
-      when: not ssh_key_exists.stat.exists
+    - name: Check if SSH public key exists
+      ansible.builtin.stat:
+        path: "{{ user_home }}/.ssh/id_rsa.pub"
+      register: ssh_public_key
+
+    - name: Generate SSH keypair
+      ansible.builtin.command:
+        argv:
+          - ssh-keygen
+          - -q
+          - -t
+          - rsa
+          - -b
+          - "4096"
+          - -N
+          - ""
+          - -C
+          - "{{ username }}@{{ ansible_facts['hostname'] }}"
+          - -f
+          - "{{ user_home }}/.ssh/id_rsa"
+      when: not ssh_private_key.stat.exists
+      register: ssh_keygen
+      changed_when: ssh_keygen.rc == 0
+
+    - name: Rebuild missing SSH public key
+      ansible.builtin.shell: |
+        set -o pipefail
+        ssh-keygen -y -f "{{ user_home }}/.ssh/id_rsa" > "{{ user_home }}/.ssh/id_rsa.pub"
+        chmod 0644 "{{ user_home }}/.ssh/id_rsa.pub"
+      when:
+        - ssh_private_key.stat.exists
+        - not ssh_public_key.stat.exists
+      register: ssh_pubkey_rebuild
+      changed_when: ssh_pubkey_rebuild.rc == 0
 
     # Directories and helpers
     - name: Create .local/bin directory
