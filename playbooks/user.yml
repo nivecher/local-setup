@@ -30,6 +30,8 @@
           echo "Shell already correct"
         fi
       become: true
+      args:
+        executable: /bin/bash
       register: shell_change
       changed_when: shell_change.stdout is search("Shell changed")
 
@@ -50,6 +52,8 @@
           echo "Neither curl nor wget available"
           exit 1
         fi
+      args:
+        executable: /bin/bash
       environment:
         RUNZSH: "no"
         CHSH: "no"
@@ -143,6 +147,8 @@
       ansible.builtin.shell: |
         set -o pipefail
         /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+      args:
+        executable: /bin/bash
       environment:
         NONINTERACTIVE: "1"
       when: not homebrew_exists.stat.exists
@@ -159,6 +165,8 @@
       ansible.builtin.shell: |
         set -o pipefail
         curl https://pyenv.run | bash
+      args:
+        executable: /bin/bash
       when: not pyenv_exists.stat.exists
 
     - name: Check if Python version is installed
@@ -168,6 +176,8 @@
         eval "$(pyenv init --path)" 2>/dev/null || true
         eval "$(pyenv init -)" 2>/dev/null || true
         pyenv versions --bare | grep -x "{{ python_version }}" || echo "not_installed"
+      args:
+        executable: /bin/bash
       register: python_check
       changed_when: false
 
@@ -179,6 +189,8 @@
         eval "$(pyenv init -)"
         pyenv install {{ python_version }}
         pyenv global {{ python_version }}
+      args:
+        executable: /bin/bash
       when: python_check.stdout == "not_installed"
       register: python_install_result
       changed_when: python_install_result.rc == 0
