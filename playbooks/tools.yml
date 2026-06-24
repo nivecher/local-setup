@@ -69,6 +69,8 @@
         export PATH="{{ brew_path }}/bin:$PATH"
         tfenv install {{ development_tools.terraform }}
         tfenv use {{ development_tools.terraform }}
+      args:
+        executable: /bin/bash
       when:
         - brew_check.rc == 0
         - development_tools.terraform is defined
@@ -116,6 +118,8 @@
         eval "$({{ brew_bin }} shellenv)"
         export PATH="{{ brew_path }}/bin:$PATH"
         terraform version 2>/dev/null | head -1
+      args:
+        executable: /bin/bash
       when:
         - brew_check.rc == 0
         - development_tools.terraform is defined
@@ -147,6 +151,8 @@
         eval "$({{ brew_bin }} shellenv)"
         export PATH="{{ brew_path }}/bin:$PATH"
         tfenv list-remote 2>/dev/null | head -5
+      args:
+        executable: /bin/bash
       when:
         - brew_check.rc == 0
         - development_tools.terraform is defined
