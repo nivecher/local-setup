@@ -10,91 +10,100 @@
 
   tasks:
     - name: Update package cache
-      ansible.builtin.raw: |
-        set -e
-        if command -v apt-get >/dev/null 2>&1; then
-          export DEBIAN_FRONTEND=noninteractive
-          apt-get update
-        elif command -v dnf >/dev/null 2>&1; then
-          dnf makecache
-        elif command -v yum >/dev/null 2>&1; then
-          yum makecache
-        else
-          echo "No supported package manager found" >&2
-          exit 1
-        fi
-      changed_when: false
+      ansible.builtin.package:
+        update_cache: true
       when: ansible_facts['os_family'] in ['Debian', 'RedHat']
 
     - name: Install base packages
-      ansible.builtin.raw: >
-        {% if ansible_facts['os_family'] == 'Debian' %}
-        export DEBIAN_FRONTEND=noninteractive &&
-        apt-get install -y {{ base_packages | join(' ') }}
-        {% elif ansible_facts['os_family'] == 'RedHat' %}
-        {{ 'dnf' if ansible_facts['distribution'] in ['Fedora', 'RedHat', 'Rocky', 'AlmaLinux'] else 'yum' }}
-        install -y {{ base_packages | join(' ') }}
-        {% endif %}
-      changed_when: false
+      ansible.builtin.package:
+        name: "{{ base_packages }}"
+        state: present
+
+    - name: Install Homebrew bootstrap dependencies (Debian/Ubuntu)
+      ansible.builtin.package:
+        name:
+          - build-essential
+          - procps
+          - curl
+          - file
+          - git
+          - unzip
+        state: present
+      when: ansible_facts['os_family'] == "Debian"
+
+    - name: Install Homebrew bootstrap dependencies (RedHat/Fedora)
+      ansible.builtin.package:
+        name:
+          - make
+          - gcc
+          - gcc-c++
+          - procps-ng
+          - curl
+          - file
+          - git
+          - unzip
+        state: present
+      when: ansible_facts['os_family'] == "RedHat"
 
     - name: Install pyenv build dependencies (Debian/Ubuntu)
-      ansible.builtin.raw: >
-        export DEBIAN_FRONTEND=noninteractive &&
-        apt-get install -y
-        make build-essential libssl-dev zlib1g-dev libbz2-dev
-        libreadline-dev libsqlite3-dev wget curl llvm libncursesw5-dev
-        xz-utils tk-dev libxml2-dev libxmlsec1-dev libffi-dev liblzma-dev
-      changed_when: false
+      ansible.builtin.package:
+        name:
+          - make
+          - build-essential
+          - libssl-dev
+          - zlib1g-dev
+          - libbz2-dev
+          - libreadline-dev
+          - libsqlite3-dev
+          - wget
+          - curl
+          - llvm
+          - libncursesw5-dev
+          - xz-utils
+          - tk-dev
+          - libxml2-dev
+          - libxmlsec1-dev
+          - libffi-dev
+          - liblzma-dev
+        state: present
       when: ansible_facts['os_family'] == "Debian"
 
     - name: Install pyenv build dependencies (RedHat/Fedora)
-      ansible.builtin.raw: >
-        {{ 'dnf' if ansible_facts['distribution'] in ['Fedora', 'RedHat', 'Rocky', 'AlmaLinux'] else 'yum' }}
-        install -y
-        make gcc gcc-c++ openssl-devel zlib-devel bzip2-devel readline-devel
-        sqlite-devel wget curl llvm ncurses-devel xz tk-devel
-        libxml2-devel xmlsec1-devel libffi-devel xz-devel
-      changed_when: false
+      ansible.builtin.package:
+        name:
+          - make
+          - gcc
+          - gcc-c++
+          - openssl-devel
+          - zlib-devel
+          - bzip2-devel
+          - readline-devel
+          - sqlite-devel
+          - wget
+          - curl
+          - llvm
+          - ncurses-devel
+          - xz
+          - tk-devel
+          - libxml2-devel
+          - xmlsec1-devel
+          - libffi-devel
+          - xz-devel
+        state: present
       when: ansible_facts['os_family'] == "RedHat"
 
     - name: Install minimal Python (Debian/Ubuntu)
-      ansible.builtin.raw: >
-        export DEBIAN_FRONTEND=noninteractive &&
-        apt-get install -y python3-minimal python3-pip
-      changed_when: false
+      ansible.builtin.package:
+        name:
+          - python3-minimal
+          - python3-pip
+        state: present
       when: ansible_facts['os_family'] == "Debian"
 
     - name: Install minimal Python (RedHat/Fedora)
-      ansible.builtin.raw: >
-        {{ 'dnf' if ansible_facts['distribution'] in ['Fedora', 'RedHat', 'Rocky', 'AlmaLinux'] else 'yum' }}
-        install -y python3 python3-pip
-      changed_when: false
+      ansible.builtin.package:
+        name:
+          - python3
+          - python3-pip
+        state: present
       when: ansible_facts['os_family'] == "RedHat"
-
-    - name: Check python command path
-      ansible.builtin.stat:
-        path: "/usr/bin/python"
-      register: python_bin_stat
-
-    - name: Check pip command path
-      ansible.builtin.stat:
-        path: "/usr/bin/pip"
-      register: pip_bin_stat
-
-    - name: Create python symlink
-      ansible.builtin.file:
-        src: "/usr/bin/python3"
-        dest: "/usr/bin/python"
-        state: link
-      when:
-        - not ansible_check_mode
-        - not python_bin_stat.stat.exists or python_bin_stat.stat.islnk | default(false)
-
-    - name: Create pip symlink
-      ansible.builtin.file:
-        src: "/usr/bin/pip3"
-        dest: "/usr/bin/pip"
-        state: link
-      when:
-        - not ansible_check_mode
-        - not pip_bin_stat.stat.exists or pip_bin_stat.stat.islnk | default(false)

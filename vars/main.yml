@@ -10,16 +10,18 @@ zsh_theme: "robbyrussell"   # Oh My Zsh theme
 
 # User Configuration
 username: "{{ ansible_facts['user_id'] }}"
-zsh_path: /usr/bin/zsh
 
-# Development Tools - YOU CONTROL VERSIONS HERE
+# Development Tools
 # Format: tool_name: version
-#   - "1.5.0" = pin to this version (upgrade by changing this and re-running)
-#   - null = install latest, no pin (upgrades on each run)
+#   - null = install from the current Homebrew formula, no pin
+#   - awscli = official AWS CLI v2 installer, user-local under ~/.local
+#   - terraform = exact version installed via tfenv
+#   - node = major version installed via Homebrew formula node@<major>
+#   - other non-null values = install current Homebrew formula and brew-pin it
 #
 # Terraform: uses tfenv, version required (e.g. "1.5.7")
 # Node: use "18", "20", "22" for node@18, node@20, etc.
-# Others: version pins via brew pin after install
+# Others: Homebrew does not provide arbitrary exact historical formula versions.
 development_tools:
   awscli: null
   terraform: "1.14.5"

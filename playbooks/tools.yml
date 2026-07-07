@@ -76,22 +76,65 @@
         - development_tools.terraform is defined
         - development_tools.terraform | length > 0
       register: tfenv_terraform
-      changed_when: tfenv_terraform.rc == 0
-      failed_when: false
+      changed_when: >-
+        'already installed' not in ((tfenv_terraform.stdout | default('')) + (tfenv_terraform.stderr | default('')))
+      failed_when: tfenv_terraform.rc != 0
+
+    # --- AWS CLI v2 via official installer ---
+    - name: Install or update AWS CLI v2
+      ansible.builtin.shell: |
+        set -euo pipefail
+        case "$(uname -m)" in
+          x86_64|amd64) aws_arch="x86_64" ;;
+          aarch64|arm64) aws_arch="aarch64" ;;
+          *)
+            echo "Unsupported AWS CLI architecture: $(uname -m)" >&2
+            exit 1
+            ;;
+        esac
+
+        tmpdir="$(mktemp -d)"
+        trap 'rm -rf "$tmpdir"' EXIT
+        curl -fsSL "https://awscli.amazonaws.com/awscli-exe-linux-${aws_arch}.zip" -o "$tmpdir/awscliv2.zip"
+        unzip -q -u "$tmpdir/awscliv2.zip" -d "$tmpdir"
+        "$tmpdir/aws/install" \
+          --install-dir "{{ user_home }}/.local/aws-cli" \
+          --bin-dir "{{ user_home }}/.local/bin" \
+          --update
+      when:
+        - development_tools.awscli is defined
+      register: aws_cli_install
+      changed_when: >-
+        'Found same AWS CLI version' not in ((aws_cli_install.stdout | default('')) + (aws_cli_install.stderr | default('')))
+      failed_when: aws_cli_install.rc != 0
 
     # --- Homebrew tools (excluding terraform - uses tfenv) ---
+    - name: Warn about unsupported exact Homebrew tool versions
+      ansible.builtin.debug:
+        msg: >-
+          {{ item.key }}={{ item.value }} is configured, but this setup can only install exact
+          Homebrew versions for tools with versioned formulae such as node@<major>.
+          {{ item.key }} will be installed from the current Homebrew formula and pinned afterward.
+      loop: "{{ development_tools | dict2items }}"
+      when:
+        - brew_check.rc == 0
+        - item.key not in ["terraform", "awscli", "node"]
+        - item.value is not none
+        - (item.value | string | length) > 0
+
     - name: Install Homebrew tool
       ansible.builtin.command: >-
         {{ brew_bin }} install
-        {% if tool_version and tool_name == 'node' %}node@{{ tool_version }}{% else %}{{ tool_name }}{% endif %}
+        {{ brew_formula }}
       loop_control:
-        label: "{{ tool_name }}{% if tool_version and tool_name == 'node' %}@{{ tool_version }}{% endif %}"
+        label: "{{ brew_formula }}"
       when:
         - brew_check.rc == 0
-        - tool_name != 'terraform'
+        - tool_name not in ['terraform', 'awscli']
       vars:
         tool_name: "{{ item.key }}"
         tool_version: "{{ item.value }}"
+        brew_formula: "{{ 'node@' ~ tool_version if tool_version and tool_name == 'node' else tool_name }}"
       loop: "{{ development_tools | dict2items }}"
       register: brew_install
       changed_when: "'already installed' not in ((brew_install.stdout | default('')) + (brew_install.stderr | default('')))"
@@ -99,14 +142,29 @@
         brew_install.rc != 0 and
         'already installed' not in ((brew_install.stdout | default('')) + (brew_install.stderr | default('')))
 
+    - name: Link versioned Node formula
+      ansible.builtin.command: "{{ brew_bin }} link --overwrite --force node@{{ development_tools.node }}"
+      when:
+        - brew_check.rc == 0
+        - development_tools.node is not none
+        - (development_tools.node | string | length) > 0
+      register: brew_node_link
+      changed_when: >-
+        'Linking' in ((brew_node_link.stdout | default('')) + (brew_node_link.stderr | default('')))
+      failed_when: >-
+        brew_node_link.rc != 0 and
+        'Already linked' not in ((brew_node_link.stdout | default('')) + (brew_node_link.stderr | default('')))
+
     - name: Pin Homebrew tool to version
-      ansible.builtin.command: "{{ brew_bin }} pin {{ item.key }}{% if item.value and item.key == 'node' %}@{{ item.value }}{% endif %}"
+      ansible.builtin.command: "{{ brew_bin }} pin {{ brew_formula }}"
       loop: "{{ development_tools | dict2items }}"
       when:
         - brew_check.rc == 0
-        - item.key != "terraform"
+        - item.key not in ["terraform", "awscli"]
         - item.value is not none
         - (item.value | string | length) > 0
+      vars:
+        brew_formula: "{{ 'node@' ~ item.value if item.value and item.key == 'node' else item.key }}"
       register: brew_pin
       changed_when: brew_pin.rc == 0
       failed_when: false
@@ -128,10 +186,20 @@
       failed_when: false
       tags: [audit, validate]
 
+    - name: Get AWS CLI version
+      ansible.builtin.command: "{{ user_home }}/.local/bin/aws --version"
+      when: development_tools.awscli is defined
+      register: aws_cli_version
+      changed_when: false
+      failed_when: false
+      tags: [audit, validate]
+
     - name: Get Homebrew tool versions
-      ansible.builtin.command: "{{ brew_bin }} list --versions {{ item.key }}{% if item.value and item.key == 'node' %}@{{ item.value }}{% endif %}"
-      loop: "{{ development_tools | dict2items | selectattr('key', 'ne', 'terraform') | list }}"
+      ansible.builtin.command: "{{ brew_bin }} list --versions {{ brew_formula }}"
+      loop: "{{ development_tools | dict2items | rejectattr('key', 'in', ['terraform', 'awscli']) | list }}"
       when: brew_check.rc == 0
+      vars:
+        brew_formula: "{{ 'node@' ~ item.value if item.value and item.key == 'node' else item.key }}"
       register: brew_versions
       changed_when: false
       failed_when: false
@@ -170,6 +238,11 @@
           terraform: pinned={{ development_tools.terraform }}
             {{ terraform_version.stdout | default('installed: (check failed)') | trim }}
           {% if terraform_available.stdout %}  available: {{ terraform_available.stdout.split('\n')[0] }}{% endif %}
+          {% endif %}
+
+          {% if development_tools.awscli is defined %}
+          awscli: official installer
+            {{ aws_cli_version.stdout | default('installed: (check failed)') | trim }}
           {% endif %}
 
           {% for r in brew_versions.results if r is defined and not r.skipped | default(false) %}

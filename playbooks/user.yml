@@ -16,35 +16,33 @@
 
   tasks:
     # Shell Configuration
-    - name: Check if zsh exists
-      ansible.builtin.stat:
-        path: "{{ zsh_path }}"
-      register: zsh_exists
-
-    - name: Install zsh with system package manager
-      ansible.builtin.raw: |
-        set -e
-        if command -v apt-get >/dev/null 2>&1; then
-          export DEBIAN_FRONTEND=noninteractive
-          apt-get install -y zsh
-        elif command -v dnf >/dev/null 2>&1; then
-          dnf install -y zsh
-        elif command -v yum >/dev/null 2>&1; then
-          yum install -y zsh
-        else
-          echo "No supported package manager found" >&2
-          exit 1
-        fi
+    - name: Ensure zsh is installed
+      ansible.builtin.package:
+        name: "{{ default_shell }}"
+        state: present
       become: true
-      changed_when: false
-      when: not zsh_exists.stat.exists
 
-    - name: Change default shell to zsh
+    - name: Resolve default shell path
+      ansible.builtin.shell: "command -v {{ default_shell }}"
+      args:
+        executable: /bin/bash
+      register: default_shell_path
+      changed_when: false
+
+    - name: Ensure default shell is listed in /etc/shells
+      ansible.builtin.lineinfile:
+        path: /etc/shells
+        line: "{{ default_shell_path.stdout }}"
+        create: true
+        mode: '0644'
+      become: true
+
+    - name: Change default shell
       ansible.builtin.shell: |
         set -o pipefail
         CURRENT_SHELL=$(getent passwd {{ username }} | cut -d: -f7)
-        if [ "$CURRENT_SHELL" != "{{ zsh_path }}" ]; then
-          chsh {{ username }} --shell {{ zsh_path }}
+        if [ "$CURRENT_SHELL" != "{{ default_shell_path.stdout }}" ]; then
+          chsh -s "{{ default_shell_path.stdout }}" "{{ username }}"
           echo "Shell changed"
         else
           echo "Shell already correct"
@@ -137,27 +135,6 @@
         line: "source $ZSH/oh-my-zsh.sh"
         create: true
 
-    - name: Add pyenv to PATH in .zshrc
-      ansible.builtin.lineinfile:
-        path: "{{ user_home }}/.zshrc"
-        regexp: '^export PYENV_ROOT='
-        line: 'export PYENV_ROOT="$HOME/.pyenv"'
-        create: true
-
-    - name: Add pyenv init in .zshrc
-      ansible.builtin.lineinfile:
-        path: "{{ user_home }}/.zshrc"
-        regexp: 'pyenv init'
-        line: 'eval "$(pyenv init -)"'
-        create: true
-
-    - name: Add pyenv init --path in .zshrc
-      ansible.builtin.lineinfile:
-        path: "{{ user_home }}/.zshrc"
-        regexp: 'pyenv init --path'
-        line: 'eval "$(pyenv init --path)"'
-        create: true
-
     - name: Add Homebrew shellenv to .zshrc
       ansible.builtin.lineinfile:
         path: "{{ user_home }}/.zshrc"
@@ -172,12 +149,11 @@
         line: 'export PATH="$HOME/.local/bin:$PATH"'
         create: true
 
-    - name: Add browser helper to .zshrc
+    - name: Remove legacy global browser helper from .zshrc
       ansible.builtin.lineinfile:
         path: "{{ user_home }}/.zshrc"
-        regexp: '^export BROWSER='
-        line: 'export BROWSER="$HOME/.local/bin/browser-helper"'
-        create: true
+        regexp: '^export BROWSER="\$HOME/\.local/bin/browser-helper"$'
+        state: absent
 
     # Homebrew
     - name: Check if Homebrew exists
@@ -206,17 +182,50 @@
     - name: Install pyenv
       ansible.builtin.shell: |
         set -o pipefail
-        curl https://pyenv.run | bash
+        curl -fsSL https://pyenv.run | bash
       args:
         executable: /bin/bash
       when: not pyenv_exists.stat.exists
 
+    - name: Remove legacy pyenv shell initialization
+      ansible.builtin.lineinfile:
+        path: "{{ user_home }}/.zshrc"
+        regexp: "{{ item }}"
+        state: absent
+      loop:
+        - '^export PYENV_ROOT="\$HOME/\.pyenv"$'
+        - '^eval "\$\(pyenv init -\)"$'
+        - '^eval "\$\(pyenv init --path\)"$'
+
+    - name: Configure pyenv login shell initialization
+      ansible.builtin.blockinfile:
+        path: "{{ user_home }}/.zprofile"
+        marker: "# {mark} ANSIBLE MANAGED BLOCK - pyenv login"
+        create: true
+        mode: '0644'
+        block: |
+          export PYENV_ROOT="${PYENV_ROOT:-$HOME/.pyenv}"
+          [[ -d "$PYENV_ROOT/bin" ]] && export PATH="$PYENV_ROOT/bin:$PATH"
+          command -v pyenv >/dev/null && eval "$(pyenv init --path)"
+
+    - name: Configure pyenv interactive shell initialization
+      ansible.builtin.blockinfile:
+        path: "{{ user_home }}/.zshrc"
+        marker: "# {mark} ANSIBLE MANAGED BLOCK - pyenv interactive"
+        create: true
+        mode: '0644'
+        block: |
+          export PYENV_ROOT="${PYENV_ROOT:-$HOME/.pyenv}"
+          [[ -d "$PYENV_ROOT/bin" ]] && export PATH="$PYENV_ROOT/bin:$PATH"
+          command -v pyenv >/dev/null && eval "$(pyenv init - zsh)"
+
     - name: Check if Python version is installed
       ansible.builtin.shell: |
         set -o pipefail
-        export PATH="$HOME/.pyenv/bin:$PATH"
+        export PYENV_ROOT="$HOME/.pyenv"
+        export PATH="$PYENV_ROOT/bin:$PATH"
         eval "$(pyenv init --path)" 2>/dev/null || true
-        eval "$(pyenv init -)" 2>/dev/null || true
+        eval "$(pyenv init - bash)" 2>/dev/null || true
         pyenv versions --bare | grep -x "{{ python_version }}" || echo "not_installed"
       args:
         executable: /bin/bash
@@ -226,9 +235,10 @@
     - name: Install Python version via pyenv
       ansible.builtin.shell: |
         set -o pipefail
-        export PATH="$HOME/.pyenv/bin:$PATH"
+        export PYENV_ROOT="$HOME/.pyenv"
+        export PATH="$PYENV_ROOT/bin:$PATH"
         eval "$(pyenv init --path)"
-        eval "$(pyenv init -)"
+        eval "$(pyenv init - bash)"
         pyenv install {{ python_version }}
         pyenv global {{ python_version }}
       args:
