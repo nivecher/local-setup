@@ -56,10 +56,10 @@ development_tools:
 
 ```bash
 # Full setup (prompts for sudo password)
-ansible-playbook site.yml --ask-become-pass
+ansible-playbook site.yml
 
 # Individual parts
-ansible-playbook playbooks/system.yml --ask-become-pass   # System (sudo required)
+ansible-playbook playbooks/system.yml   # System (sudo required)
 ansible-playbook playbooks/user.yml      # User config
 ansible-playbook playbooks/tools.yml     # Development tools
 
@@ -67,7 +67,7 @@ ansible-playbook playbooks/tools.yml     # Development tools
 make validate
 
 # Preview changes
-ansible-playbook site.yml --check --diff --ask-become-pass
+ansible-playbook site.yml --check --diff
 
 # Test syntax
 ansible-playbook site.yml --syntax-check
@@ -92,9 +92,9 @@ ansible-playbook site.yml --syntax-check
 
 ## 🆘 Troubleshooting
 
-- **"sudo: a password is required"**: Add `--ask-become-pass` (or `-K`) to prompt for your sudo password
+- **"sudo: a password is required"**: This repo config prompts for sudo by default. If running outside this config, add `--ask-become-pass` (or `-K`)
 - **Syntax errors**: `ansible-playbook site.yml --syntax-check`
-- **Preview changes**: `ansible-playbook site.yml --check --diff --ask-become-pass`  
+- **Preview changes**: `ansible-playbook site.yml --check --diff`
 - **Verbose output**: `ansible-playbook site.yml -v`
 
 ## 📋 Requirements
