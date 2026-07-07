@@ -9,7 +9,7 @@ default_shell: zsh
 zsh_theme: "robbyrussell"   # Oh My Zsh theme
 
 # User Configuration
-username: "{{ ansible_facts['user_id'] }}"
+username: "{{ lookup('env', 'SUDO_USER') | default(lookup('env', 'USER'), true) | default(lookup('env', 'LOGNAME'), true) }}"
 
 # Development Tools
 # Format: tool_name: version
