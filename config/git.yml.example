@@ -1,0 +1,8 @@
+---
+# Copy this file to config/git.yml and set your personal values.
+# config/git.yml is ignored by git so your identity stays local.
+git_config:
+  user.name: "Your Name"
+  user.email: "you@example.com"
+  init.defaultBranch: main
+  pull.rebase: "false"

@@ -19,6 +19,32 @@
         name: "{{ base_packages }}"
         state: present
 
+    - name: Install Homebrew bootstrap dependencies (Debian/Ubuntu)
+      ansible.builtin.package:
+        name:
+          - build-essential
+          - procps
+          - curl
+          - file
+          - git
+          - unzip
+        state: present
+      when: ansible_facts['os_family'] == "Debian"
+
+    - name: Install Homebrew bootstrap dependencies (RedHat/Fedora)
+      ansible.builtin.package:
+        name:
+          - make
+          - gcc
+          - gcc-c++
+          - procps-ng
+          - curl
+          - file
+          - git
+          - unzip
+        state: present
+      when: ansible_facts['os_family'] == "RedHat"
+
     - name: Install pyenv build dependencies (Debian/Ubuntu)
       ansible.builtin.package:
         name:
@@ -82,16 +108,18 @@
         state: present
       when: ansible_facts['os_family'] == "RedHat"
 
-    - name: Create python symlink
-      ansible.builtin.file:
-        src: "/usr/bin/python3"
-        dest: "/usr/bin/python"
-        state: link
-      when: not ansible_check_mode
+    - name: Install Ruby and RubyGems (Debian/Ubuntu)
+      ansible.builtin.package:
+        name:
+          - ruby-full
+        state: present
+      when: ansible_facts['os_family'] == "Debian"
 
-    - name: Create pip symlink
-      ansible.builtin.file:
-        src: "/usr/bin/pip3"
-        dest: "/usr/bin/pip"
-        state: link
-      when: not ansible_check_mode
+    - name: Install Ruby and RubyGems (RedHat/Fedora)
+      ansible.builtin.package:
+        name:
+          - ruby
+          - ruby-devel
+          - rubygems
+        state: present
+      when: ansible_facts['os_family'] == "RedHat"

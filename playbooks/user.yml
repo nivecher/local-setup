@@ -4,34 +4,45 @@
   connection: local
   become: false
   gather_facts: true
+  module_defaults:
+    ansible.builtin.shell:
+      executable: /bin/bash
 
   vars_files:
     - ../vars/main.yml
 
   vars:
     user_home: "{{ lookup('env', 'HOME') }}"
+    git_config_file: "{{ playbook_dir }}/../config/git.yml"
 
   tasks:
     # Shell Configuration
     - name: Ensure zsh is installed
       ansible.builtin.package:
-        name: zsh
+        name: "{{ default_shell }}"
         state: present
       become: true
 
-    - name: Change default shell to zsh
-      ansible.builtin.shell: |
-        set -o pipefail
-        CURRENT_SHELL=$(getent passwd {{ username }} | cut -d: -f7)
-        if [ "$CURRENT_SHELL" != "{{ zsh_path }}" ]; then
-          chsh {{ username }} --shell {{ zsh_path }}
-          echo "Shell changed"
-        else
-          echo "Shell already correct"
-        fi
+    - name: Resolve default shell path
+      ansible.builtin.shell: "command -v {{ default_shell }}"
+      args:
+        executable: /bin/bash
+      register: default_shell_path
+      changed_when: false
+
+    - name: Ensure default shell is listed in /etc/shells
+      ansible.builtin.lineinfile:
+        path: /etc/shells
+        line: "{{ default_shell_path.stdout }}"
+        create: true
+        mode: '0644'
       become: true
-      register: shell_change
-      changed_when: shell_change.stdout is search("Shell changed")
+
+    - name: Change default shell
+      ansible.builtin.user:
+        name: "{{ username }}"
+        shell: "{{ default_shell_path.stdout }}"
+      become: true
 
     - name: Check if Oh My Zsh is installed
       ansible.builtin.stat:
@@ -50,6 +61,8 @@
           echo "Neither curl nor wget available"
           exit 1
         fi
+      args:
+        executable: /bin/bash
       environment:
         RUNZSH: "no"
         CHSH: "no"
@@ -58,9 +71,49 @@
 
     - name: Copy zsh plugins configuration
       ansible.builtin.copy:
-        src: ../linux/zsh-plugins.sh
+        src: ../config/zsh-plugins.sh
         dest: "{{ user_home }}/.zsh-plugins.sh"
         mode: '0644'
+        force: false
+
+    # Optional Git Configuration
+    - name: Check for local git configuration
+      ansible.builtin.stat:
+        path: "{{ git_config_file }}"
+      register: git_config_file_status
+
+    - name: Load local git configuration
+      ansible.builtin.include_vars:
+        file: "{{ git_config_file }}"
+        name: local_git
+      when: git_config_file_status.stat.exists
+
+    - name: Read current global git configuration
+      ansible.builtin.command:
+        argv:
+          - git
+          - config
+          - --global
+          - --get
+          - "{{ item.key }}"
+      loop: "{{ local_git.git_config | default({}) | dict2items }}"
+      register: current_git_config
+      changed_when: false
+      failed_when: false
+      when: git_config_file_status.stat.exists
+
+    - name: Apply global git configuration
+      ansible.builtin.command:
+        argv:
+          - git
+          - config
+          - --global
+          - "{{ item.item.key }}"
+          - "{{ item.item.value | string }}"
+      loop: "{{ current_git_config.results | default([]) }}"
+      changed_when: true
+      when:
+        - item.rc != 0 or item.stdout != (item.item.value | string)
 
     - name: Configure Oh My Zsh theme in .zshrc
       ansible.builtin.lineinfile:
@@ -70,46 +123,46 @@
         create: true
         mode: '0644'
 
-    - name: Configure Oh My Zsh plugins in .zshrc
+    - name: Check for existing Oh My Zsh plugins in .zshrc
+      ansible.builtin.command:
+        argv:
+          - grep
+          - -Eq
+          - "^plugins="
+          - "{{ user_home }}/.zshrc"
+      register: zshrc_plugins
+      changed_when: false
+      failed_when: false
+
+    - name: Add default Oh My Zsh plugins in .zshrc
       ansible.builtin.lineinfile:
         path: "{{ user_home }}/.zshrc"
-        regexp: "^plugins="
         line: "plugins=(git)"
+        insertafter: "^ZSH_THEME="
         create: true
+      when: zshrc_plugins.rc != 0
+
+    - name: Remove misplaced custom plugin source
+      ansible.builtin.lineinfile:
+        path: "{{ user_home }}/.zshrc"
+        regexp: '.zsh-plugins.sh'
+        state: absent
+      when: zshrc_plugins.rc != 0
+
+    - name: Source custom plugins before Oh My Zsh
+      ansible.builtin.lineinfile:
+        path: "{{ user_home }}/.zshrc"
+        regexp: '.zsh-plugins.sh'
+        line: '[ -f ~/.zsh-plugins.sh ] && source ~/.zsh-plugins.sh'
+        insertbefore: "^source.*oh-my-zsh.sh"
+        create: true
+      when: zshrc_plugins.rc != 0
 
     - name: Source Oh My Zsh
       ansible.builtin.lineinfile:
         path: "{{ user_home }}/.zshrc"
         regexp: "^source.*oh-my-zsh.sh"
         line: "source $ZSH/oh-my-zsh.sh"
-        create: true
-
-    - name: Source custom plugins
-      ansible.builtin.lineinfile:
-        path: "{{ user_home }}/.zshrc"
-        regexp: '.zsh-plugins.sh'
-        line: '[ -f ~/.zsh-plugins.sh ] && source ~/.zsh-plugins.sh'
-        create: true
-
-    - name: Add pyenv to PATH in .zshrc
-      ansible.builtin.lineinfile:
-        path: "{{ user_home }}/.zshrc"
-        regexp: '^export PYENV_ROOT='
-        line: 'export PYENV_ROOT="$HOME/.pyenv"'
-        create: true
-
-    - name: Add pyenv init in .zshrc
-      ansible.builtin.lineinfile:
-        path: "{{ user_home }}/.zshrc"
-        regexp: 'pyenv init'
-        line: 'eval "$(pyenv init -)"'
-        create: true
-
-    - name: Add pyenv init --path in .zshrc
-      ansible.builtin.lineinfile:
-        path: "{{ user_home }}/.zshrc"
-        regexp: 'pyenv init --path'
-        line: 'eval "$(pyenv init --path)"'
         create: true
 
     - name: Add Homebrew shellenv to .zshrc
@@ -126,12 +179,11 @@
         line: 'export PATH="$HOME/.local/bin:$PATH"'
         create: true
 
-    - name: Add browser helper to .zshrc
+    - name: Remove legacy global browser helper from .zshrc
       ansible.builtin.lineinfile:
         path: "{{ user_home }}/.zshrc"
-        regexp: '^export BROWSER='
-        line: 'export BROWSER="$HOME/.local/bin/browser-helper"'
-        create: true
+        regexp: '^export BROWSER="\$HOME/\.local/bin/browser-helper"$'
+        state: absent
 
     # Homebrew
     - name: Check if Homebrew exists
@@ -143,6 +195,8 @@
       ansible.builtin.shell: |
         set -o pipefail
         /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+      args:
+        executable: /bin/bash
       environment:
         NONINTERACTIVE: "1"
       when: not homebrew_exists.stat.exists
@@ -158,27 +212,67 @@
     - name: Install pyenv
       ansible.builtin.shell: |
         set -o pipefail
-        curl https://pyenv.run | bash
+        curl -fsSL https://pyenv.run | bash
+      args:
+        executable: /bin/bash
       when: not pyenv_exists.stat.exists
+
+    - name: Remove legacy pyenv shell initialization
+      ansible.builtin.lineinfile:
+        path: "{{ user_home }}/.zshrc"
+        regexp: "{{ item }}"
+        state: absent
+      loop:
+        - '^export PYENV_ROOT="\$HOME/\.pyenv"$'
+        - '^eval "\$\(pyenv init -\)"$'
+        - '^eval "\$\(pyenv init --path\)"$'
+
+    - name: Configure pyenv login shell initialization
+      ansible.builtin.blockinfile:
+        path: "{{ user_home }}/.zprofile"
+        marker: "# {mark} ANSIBLE MANAGED BLOCK - pyenv login"
+        create: true
+        mode: '0644'
+        block: |
+          export PYENV_ROOT="${PYENV_ROOT:-$HOME/.pyenv}"
+          [[ -d "$PYENV_ROOT/bin" ]] && export PATH="$PYENV_ROOT/bin:$PATH"
+          command -v pyenv >/dev/null && eval "$(pyenv init --path)"
+
+    - name: Configure pyenv interactive shell initialization
+      ansible.builtin.blockinfile:
+        path: "{{ user_home }}/.zshrc"
+        marker: "# {mark} ANSIBLE MANAGED BLOCK - pyenv interactive"
+        create: true
+        mode: '0644'
+        block: |
+          export PYENV_ROOT="${PYENV_ROOT:-$HOME/.pyenv}"
+          [[ -d "$PYENV_ROOT/bin" ]] && export PATH="$PYENV_ROOT/bin:$PATH"
+          command -v pyenv >/dev/null && eval "$(pyenv init - zsh)"
 
     - name: Check if Python version is installed
       ansible.builtin.shell: |
         set -o pipefail
-        export PATH="$HOME/.pyenv/bin:$PATH"
+        export PYENV_ROOT="$HOME/.pyenv"
+        export PATH="$PYENV_ROOT/bin:$PATH"
         eval "$(pyenv init --path)" 2>/dev/null || true
-        eval "$(pyenv init -)" 2>/dev/null || true
+        eval "$(pyenv init - bash)" 2>/dev/null || true
         pyenv versions --bare | grep -x "{{ python_version }}" || echo "not_installed"
+      args:
+        executable: /bin/bash
       register: python_check
       changed_when: false
 
     - name: Install Python version via pyenv
       ansible.builtin.shell: |
         set -o pipefail
-        export PATH="$HOME/.pyenv/bin:$PATH"
+        export PYENV_ROOT="$HOME/.pyenv"
+        export PATH="$PYENV_ROOT/bin:$PATH"
         eval "$(pyenv init --path)"
-        eval "$(pyenv init -)"
+        eval "$(pyenv init - bash)"
         pyenv install {{ python_version }}
         pyenv global {{ python_version }}
+      args:
+        executable: /bin/bash
       when: python_check.stdout == "not_installed"
       register: python_install_result
       changed_when: python_install_result.rc == 0
@@ -193,17 +287,42 @@
     - name: Check if SSH key exists
       ansible.builtin.stat:
         path: "{{ user_home }}/.ssh/id_rsa"
-      register: ssh_key_exists
+      register: ssh_private_key
 
-    - name: Generate SSH key
-      ansible.builtin.user:
-        name: "{{ username }}"
-        generate_ssh_key: true
-        ssh_key_type: rsa
-        ssh_key_bits: 4096
-        ssh_key_file: "{{ user_home }}/.ssh/id_rsa"
-        ssh_key_comment: "{{ username }}@{{ ansible_facts['hostname'] }}"
-      when: not ssh_key_exists.stat.exists
+    - name: Check if SSH public key exists
+      ansible.builtin.stat:
+        path: "{{ user_home }}/.ssh/id_rsa.pub"
+      register: ssh_public_key
+
+    - name: Generate SSH keypair
+      ansible.builtin.command:
+        argv:
+          - ssh-keygen
+          - -q
+          - -t
+          - rsa
+          - -b
+          - "4096"
+          - -N
+          - ""
+          - -C
+          - "{{ username }}@{{ ansible_facts['hostname'] }}"
+          - -f
+          - "{{ user_home }}/.ssh/id_rsa"
+      when: not ssh_private_key.stat.exists
+      register: ssh_keygen
+      changed_when: ssh_keygen.rc == 0
+
+    - name: Rebuild missing SSH public key
+      ansible.builtin.shell: |
+        set -o pipefail
+        ssh-keygen -y -f "{{ user_home }}/.ssh/id_rsa" > "{{ user_home }}/.ssh/id_rsa.pub"
+        chmod 0644 "{{ user_home }}/.ssh/id_rsa.pub"
+      when:
+        - ssh_private_key.stat.exists
+        - not ssh_public_key.stat.exists
+      register: ssh_pubkey_rebuild
+      changed_when: ssh_pubkey_rebuild.rc == 0
 
     # Directories and helpers
     - name: Create .local/bin directory
@@ -217,7 +336,7 @@
         dest: "{{ user_home }}/.local/bin/browser-helper"
         content: |
           #!/bin/bash
-          echo "📋 Copy this URL: $1"
+          echo "Copy this URL: $1"
         mode: '0755'
 
     - name: Create browser symlinks
