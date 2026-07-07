@@ -38,20 +38,10 @@
       become: true
 
     - name: Change default shell
-      ansible.builtin.shell: |
-        set -o pipefail
-        CURRENT_SHELL=$(getent passwd {{ username }} | cut -d: -f7)
-        if [ "$CURRENT_SHELL" != "{{ default_shell_path.stdout }}" ]; then
-          chsh -s "{{ default_shell_path.stdout }}" "{{ username }}"
-          echo "Shell changed"
-        else
-          echo "Shell already correct"
-        fi
+      ansible.builtin.user:
+        name: "{{ username }}"
+        shell: "{{ default_shell_path.stdout }}"
       become: true
-      args:
-        executable: /bin/bash
-      register: shell_change
-      changed_when: shell_change.stdout is search("Shell changed")
 
     - name: Check if Oh My Zsh is installed
       ansible.builtin.stat:
