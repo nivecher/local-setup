@@ -1,6 +1,6 @@
 # Local Development Setup
 
-.PHONY: help install check system user tools audit clean
+.PHONY: help install check system user tools audit validate clean
 
 help:
 	@echo "Local Development Setup"

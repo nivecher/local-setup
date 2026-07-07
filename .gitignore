@@ -45,6 +45,7 @@ Thumbs.db
 local_vars.yml
 local_config.yml
 vars/local.yml
+config/git.yml
 
 # SSH keys (if accidentally placed here)
 *.pem

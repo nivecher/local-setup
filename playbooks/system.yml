@@ -107,3 +107,19 @@
           - python3-pip
         state: present
       when: ansible_facts['os_family'] == "RedHat"
+
+    - name: Install Ruby and RubyGems (Debian/Ubuntu)
+      ansible.builtin.package:
+        name:
+          - ruby-full
+        state: present
+      when: ansible_facts['os_family'] == "Debian"
+
+    - name: Install Ruby and RubyGems (RedHat/Fedora)
+      ansible.builtin.package:
+        name:
+          - ruby
+          - ruby-devel
+          - rubygems
+        state: present
+      when: ansible_facts['os_family'] == "RedHat"

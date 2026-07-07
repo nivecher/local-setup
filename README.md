@@ -1,113 +1,111 @@
-# Local Development Environment Setup
+# Local Setup
 
-Simple, standard Ansible setup for local development environments.
+Ansible setup for a fresh Linux development instance.
 
-## 🚀 Quick Start
+## Fresh Linux Setup
+
+Install the minimum packages needed to clone and run this repo:
 
 ```bash
+sudo apt update && sudo apt install -y git python3
 git clone <repo-url>
 cd local-setup
 ./bootstrap.sh
 ```
 
-## 📁 Structure
+For Fedora/RHEL:
 
-```
-local-setup/
-├── site.yml              # Main playbook (runs all)
-├── playbooks/            # Playbook directory (Ansible standard)
-│   ├── system.yml        # System packages (requires sudo)  
-│   ├── user.yml          # User config (shell, python, ssh)
-│   └── tools.yml         # Development tools (homebrew)
-├── vars/main.yml         # Configuration
-├── inventory/hosts.yml   # Inventory
-├── ansible.cfg           # Ansible config
-├── requirements.yml      # Required collections
-└── linux/zsh-plugins.sh # Shell plugins
+```bash
+sudo dnf install -y git python3
+git clone <repo-url>
+cd local-setup
+./bootstrap.sh
 ```
 
-## 🎯 What Gets Installed
+`bootstrap.sh` installs Ansible if needed, then runs the full setup. Run it as
+your normal user, not with `sudo`; it will prompt when system changes need
+sudo.
 
-- **System**: Base packages, build tools, Python 3
-- **Shell**: zsh + Oh My Zsh with custom theme
-- **Python**: pyenv + Python 3.13.9  
-- **Tools**: AWS CLI, Terraform, GitHub CLI, Node.js, Go, etc.
-- **SSH**: 4096-bit RSA key generation
+## Optional Git Config
 
-## 🔧 Configuration
+To configure global git identity and defaults without committing personal values:
 
-Edit `vars/main.yml`:
+```bash
+cp config/git.yml.example config/git.yml
+vi config/git.yml
+./bootstrap.sh
+```
+
+`config/git.yml` is ignored by git. Use any global git config key:
+
+```yaml
+git_config:
+  user.name: "Your Name"
+  user.email: "you@example.com"
+  init.defaultBranch: main
+  pull.rebase: "false"
+```
+
+## What It Installs
+
+- Base packages: `curl`, `wget`, `git`, `tree`, `gawk`, `zsh`
+- Ruby: RubyGems and headers needed by repo tooling such as pre-commit hooks
+- Shell: zsh, Oh My Zsh, and plugins from `config/zsh-plugins.sh`
+- Python: pyenv and the Python version in `vars/main.yml`
+- Tools: AWS CLI, Terraform, Terragrunt, GitHub CLI, jq, yq, shfmt,
+  shellcheck, Node, Go, and pre-commit based on `vars/main.yml`
+- SSH: `~/.ssh/id_rsa` if no key exists
+
+## Configuration
+
+Edit `vars/main.yml` for shared setup choices:
 
 ```yaml
 python_version: "3.13.9"
+default_shell: zsh
 zsh_theme: "robbyrussell"
 
-# Tool versions - YOU control when to upgrade
-# Format: tool_name: version (null = latest, no pin)
 development_tools:
-  terraform: "1.5.7"   # tfenv - change this to upgrade
-  node: "18"           # node@18 - use "18", "20", "22" for versioned
-  awscli: null         # latest, no pin
-  gh: null
-  # ...
+  terraform: "1.14.5"
+  terragrunt: "0.99.2"
+  node: null
+  go: null
 ```
 
-## 📖 Usage
+Use `null` for the current Homebrew formula. Terraform is installed through
+`tfenv`, and Terragrunt is installed from its pinned GitHub release.
+
+## Common Commands
 
 ```bash
-# Full setup (prompts for sudo password)
-ansible-playbook site.yml
-
-# Individual parts
-ansible-playbook playbooks/system.yml   # System (sudo required)
-ansible-playbook playbooks/user.yml      # User config
-ansible-playbook playbooks/tools.yml     # Development tools
-
-# Validate tool versions (check for upgrades)
-make validate
-
-# Preview changes
-ansible-playbook site.yml --check --diff
-
-# Test syntax
-ansible-playbook site.yml --syntax-check
+make install    # full setup
+make check      # preview changes
+make system     # system packages only
+make user       # shell, pyenv, ssh, optional git config
+make tools      # development tools only
+make validate   # show installed tool versions
 ```
 
-## ✅ Features
+## Repo Layout
 
-- **Simple**: 3 playbooks, minimal structure
-- **Standard**: Follows Ansible best practices
-- **Idempotent**: Safe to run multiple times
-- **Cross-platform**: Ubuntu/Debian + Fedora/RHEL
-- **No duplication**: Single source of truth
+```text
+.
+|-- bootstrap.sh
+|-- site.yml
+|-- playbooks/
+|   |-- system.yml
+|   |-- user.yml
+|   `-- tools.yml
+|-- vars/main.yml
+|-- config/
+|   |-- git.yml.example
+|   `-- zsh-plugins.sh
+`-- inventory/hosts.yml
+```
 
-## 🛠️ Tool Version Control
+## Troubleshooting
 
-- **Pin versions**: Set version in `vars/main.yml` (e.g. `terraform: "1.5.7"`)
-- **Upgrade**: Change the version, run setup again
-- **Validate**: `make validate` to see installed vs available versions
-- **Terraform**: Uses tfenv; set exact version (e.g. `"1.5.7"`)
-- **Node**: Use `"18"`, `"20"`, `"22"` for node@18, etc.
-- **Others**: Set version to pin (locks current), `null` for latest
-
-## 🆘 Troubleshooting
-
-- **"sudo: a password is required"**: This repo config prompts for sudo by default. If running outside this config, add `--ask-become-pass` (or `-K`)
-- **Syntax errors**: `ansible-playbook site.yml --syntax-check`
-- **Preview changes**: `ansible-playbook site.yml --check --diff`
-- **Verbose output**: `ansible-playbook site.yml -v`
-
-## 📋 Requirements
-
-- Linux (Ubuntu/Debian or Fedora/RHEL)
-- Internet connection
-- sudo access for system setup
-
-Bootstrap script installs Ansible automatically.
-
-## 📜 Legacy Scripts
-
-The `linux/` and `windows/` directories contain the original shell scripts for reference:
-- **Recommended**: Use Ansible setup (`./bootstrap.sh` or `make install`)
-- **Legacy**: Shell scripts available in `linux/` directory
-- **Windows**: PowerShell setup available in `windows/` directory
+- If sudo fails, run `make install` or
+  `ansible-playbook site.yml --ask-become-pass`.
+- If syntax looks wrong, run `ansible-playbook site.yml --syntax-check`.
+- After setup, restart your terminal or run `source ~/.zshrc`.

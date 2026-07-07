@@ -1,5 +1,5 @@
 ---
 # Local Development Environment Setup
 - import_playbook: playbooks/system.yml
-- import_playbook: playbooks/user.yml  
+- import_playbook: playbooks/user.yml
 - import_playbook: playbooks/tools.yml

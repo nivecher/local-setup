@@ -13,6 +13,7 @@
 
   vars:
     user_home: "{{ lookup('env', 'HOME') }}"
+    git_config_file: "{{ playbook_dir }}/../config/git.yml"
 
   tasks:
     # Shell Configuration
@@ -70,10 +71,49 @@
 
     - name: Copy zsh plugins configuration
       ansible.builtin.copy:
-        src: ../linux/zsh-plugins.sh
+        src: ../config/zsh-plugins.sh
         dest: "{{ user_home }}/.zsh-plugins.sh"
         mode: '0644'
         force: false
+
+    # Optional Git Configuration
+    - name: Check for local git configuration
+      ansible.builtin.stat:
+        path: "{{ git_config_file }}"
+      register: git_config_file_status
+
+    - name: Load local git configuration
+      ansible.builtin.include_vars:
+        file: "{{ git_config_file }}"
+        name: local_git
+      when: git_config_file_status.stat.exists
+
+    - name: Read current global git configuration
+      ansible.builtin.command:
+        argv:
+          - git
+          - config
+          - --global
+          - --get
+          - "{{ item.key }}"
+      loop: "{{ local_git.git_config | default({}) | dict2items }}"
+      register: current_git_config
+      changed_when: false
+      failed_when: false
+      when: git_config_file_status.stat.exists
+
+    - name: Apply global git configuration
+      ansible.builtin.command:
+        argv:
+          - git
+          - config
+          - --global
+          - "{{ item.item.key }}"
+          - "{{ item.item.value | string }}"
+      loop: "{{ current_git_config.results | default([]) }}"
+      changed_when: true
+      when:
+        - item.rc != 0 or item.stdout != (item.item.value | string)
 
     - name: Configure Oh My Zsh theme in .zshrc
       ansible.builtin.lineinfile:
@@ -296,7 +336,7 @@
         dest: "{{ user_home }}/.local/bin/browser-helper"
         content: |
           #!/bin/bash
-          echo "📋 Copy this URL: $1"
+          echo "Copy this URL: $1"
         mode: '0755'
 
     - name: Create browser symlinks
