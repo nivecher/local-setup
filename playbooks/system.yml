@@ -2,7 +2,7 @@
 - name: System Setup (requires sudo)
   hosts: localhost
   connection: local
-  become: true
+  become: "{{ system_become | default(true) }}"
   gather_facts: true
 
   vars_files:
