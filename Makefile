@@ -15,7 +15,7 @@ help:
 	@echo "  clean    - Clean up logs"
 
 install:
-	ansible-playbook site.yml --ask-become-pass
+	./bootstrap.sh
 
 check:
 	ansible-playbook site.yml --check --diff --ask-become-pass
@@ -24,7 +24,7 @@ system:
 	ansible-playbook playbooks/system.yml --ask-become-pass
 
 user:
-	ansible-playbook playbooks/user.yml
+	ansible-playbook playbooks/user.yml --ask-become-pass
 
 tools:
 	ansible-playbook playbooks/tools.yml

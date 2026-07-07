@@ -1,4 +1,69 @@
 ---
+- name: User Privileged Configuration
+  hosts: localhost
+  connection: local
+  become: "{{ user_privileged_become | default(true) }}"
+  gather_facts: false
+  tags:
+    - privileged_user
+  module_defaults:
+    ansible.builtin.shell:
+      executable: /bin/bash
+
+  vars_files:
+    - ../vars/main.yml
+
+  tasks:
+    # Shell Configuration
+    - name: Ensure zsh is installed
+      ansible.builtin.package:
+        name: "{{ default_shell }}"
+        state: present
+
+    - name: Resolve default shell path
+      ansible.builtin.shell: "command -v {{ default_shell }}"
+      args:
+        executable: /bin/bash
+      register: default_shell_path
+      changed_when: false
+
+    - name: Ensure default shell is listed in /etc/shells
+      ansible.builtin.lineinfile:
+        path: /etc/shells
+        line: "{{ default_shell_path.stdout }}"
+        create: true
+        mode: '0644'
+
+    - name: Change default shell
+      ansible.builtin.user:
+        name: "{{ username }}"
+        shell: "{{ default_shell_path.stdout }}"
+
+    - name: Resolve primary group
+      ansible.builtin.command:
+        argv:
+          - id
+          - -gn
+          - "{{ username }}"
+      register: primary_group
+      changed_when: false
+
+    - name: Ensure Homebrew parent directory exists
+      ansible.builtin.file:
+        path: "{{ homebrew_install_path | dirname }}"
+        state: directory
+        owner: "{{ username }}"
+        group: "{{ primary_group.stdout }}"
+        mode: '0755'
+
+    - name: Ensure Homebrew prefix is writable by user
+      ansible.builtin.file:
+        path: "{{ homebrew_install_path }}"
+        state: directory
+        owner: "{{ username }}"
+        group: "{{ primary_group.stdout }}"
+        mode: '0755'
+
 - name: User Configuration
   hosts: localhost
   connection: local
@@ -17,32 +82,6 @@
 
   tasks:
     # Shell Configuration
-    - name: Ensure zsh is installed
-      ansible.builtin.package:
-        name: "{{ default_shell }}"
-        state: present
-      become: true
-
-    - name: Resolve default shell path
-      ansible.builtin.shell: "command -v {{ default_shell }}"
-      args:
-        executable: /bin/bash
-      register: default_shell_path
-      changed_when: false
-
-    - name: Ensure default shell is listed in /etc/shells
-      ansible.builtin.lineinfile:
-        path: /etc/shells
-        line: "{{ default_shell_path.stdout }}"
-        create: true
-        mode: '0644'
-      become: true
-
-    - name: Change default shell
-      ansible.builtin.user:
-        name: "{{ username }}"
-        shell: "{{ default_shell_path.stdout }}"
-      become: true
 
     - name: Check if Oh My Zsh is installed
       ansible.builtin.stat:

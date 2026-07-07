@@ -107,5 +107,7 @@ make validate   # show installed tool versions
 
 - If sudo fails, run `make install` or
   `ansible-playbook site.yml --ask-become-pass`.
+- If Ansible times out waiting for a sudo prompt, run `./bootstrap.sh`; it
+  validates sudo itself and runs privileged phases outside Ansible become.
 - If syntax looks wrong, run `ansible-playbook site.yml --syntax-check`.
 - After setup, restart your terminal or run `source ~/.zshrc`.

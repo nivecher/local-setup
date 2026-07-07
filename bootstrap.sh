@@ -146,10 +146,49 @@ if [[ -z "${CI:-}" ]]; then
 	fi
 fi
 
-# Run the complete setup using site.yml
-print_info "Running complete setup via site.yml..."
-print_info "You may be prompted for your sudo password (system setup requires it)"
-if ansible-playbook site.yml --ask-become-pass; then
+# Collect and validate sudo before Ansible starts. Some systems customize the
+# sudo/PAM prompt in a way Ansible cannot recognize, so bootstrap runs the
+# privileged phases with sudo outside of Ansible's become prompt handling.
+print_info "Validating sudo access..."
+read -r -s -p "Sudo password: " SUDO_PASSWORD
+echo
+
+if ! printf '%s\n' "$SUDO_PASSWORD" | sudo -S -p '' -v; then
+	unset SUDO_PASSWORD
+	print_error "Unable to validate sudo access"
+	exit 1
+fi
+
+run_with_sudo() {
+	printf '%s\n' "$SUDO_PASSWORD" | sudo -S -p '' env \
+		HOME="$HOME" \
+		USER="${USER:-$(id -un)}" \
+		LOGNAME="${LOGNAME:-$(id -un)}" \
+		SUDO_USER="${SUDO_USER:-${USER:-$(id -un)}}" \
+		"$@"
+}
+
+# Run privileged phases as root without Ansible become, then run user phases
+# as the current user.
+print_info "Running system setup..."
+if run_with_sudo ansible-playbook playbooks/system.yml --extra-vars "system_become=false"; then
+	print_info "Running privileged user setup..."
+else
+	unset SUDO_PASSWORD
+	print_error "System setup failed! See errors above."
+	exit 1
+fi
+
+if run_with_sudo ansible-playbook playbooks/user.yml --tags privileged_user --extra-vars "user_privileged_become=false"; then
+	unset SUDO_PASSWORD
+	print_info "Running user configuration..."
+else
+	unset SUDO_PASSWORD
+	print_error "Privileged user setup failed! See errors above."
+	exit 1
+fi
+
+if ansible-playbook playbooks/user.yml --skip-tags privileged_user && ansible-playbook playbooks/tools.yml; then
 	print_info ""
 	print_info "Setup complete!"
 	print_info ""
@@ -159,6 +198,7 @@ if ansible-playbook site.yml --ask-become-pass; then
 	print_info "  - Verify tools: terraform --version, aws --version, gh --version"
 	print_info ""
 else
+	unset SUDO_PASSWORD
 	print_error "Setup failed! See errors above."
 	exit 1
 fi
