@@ -149,41 +149,64 @@ fi
 # Collect and validate sudo before Ansible starts. Some systems customize the
 # sudo/PAM prompt in a way Ansible cannot recognize, so bootstrap runs the
 # privileged phases with sudo outside of Ansible's become prompt handling.
-print_info "Validating sudo access..."
-read -r -s -p "Sudo password: " SUDO_PASSWORD
-echo
+# Authenticate on the real TTY (sudo -v) and reuse the credential cache so the
+# password is never stored in a shell variable or piped to sudo -S.
+cleanup_sudo_cache() {
+	sudo -K 2>/dev/null || true
+}
+trap cleanup_sudo_cache EXIT
 
-if ! printf '%s\n' "$SUDO_PASSWORD" | sudo -S -p '' -v; then
-	unset SUDO_PASSWORD
-	print_error "Unable to validate sudo access"
-	exit 1
-fi
+ensure_sudo() {
+	if sudo -n true 2>/dev/null; then
+		return 0
+	fi
 
-run_with_sudo() {
-	printf '%s\n' "$SUDO_PASSWORD" | sudo -S -p '' env \
+	if [[ -n "${CI:-}" ]]; then
+		print_error "CI requires passwordless sudo for privileged setup phases"
+		return 1
+	fi
+
+	print_info "Sudo authentication required..."
+	sudo -v
+}
+
+run_privileged() {
+	# Use a dedicated Ansible temp dir so privileged runs do not leave
+	# root-owned files under ./.ansible/tmp for later user-level playbooks.
+	local privileged_tmp status
+	privileged_tmp=$(mktemp -d /tmp/ansible-privileged.XXXXXX)
+	sudo env \
 		HOME="$HOME" \
 		USER="${USER:-$(id -un)}" \
 		LOGNAME="${LOGNAME:-$(id -un)}" \
 		SUDO_USER="${SUDO_USER:-${USER:-$(id -un)}}" \
+		ANSIBLE_LOCAL_TEMP="$privileged_tmp" \
+		ANSIBLE_REMOTE_TEMP="$privileged_tmp" \
 		"$@"
+	status=$?
+	sudo rm -rf "$privileged_tmp" || true
+	return "$status"
 }
+
+print_info "Validating sudo access..."
+if ! ensure_sudo; then
+	print_error "Unable to validate sudo access"
+	exit 1
+fi
 
 # Run privileged phases as root without Ansible become, then run user phases
 # as the current user.
 print_info "Running system setup..."
-if run_with_sudo ansible-playbook playbooks/system.yml --extra-vars "system_become=false"; then
+if run_privileged ansible-playbook playbooks/system.yml --extra-vars "system_become=false"; then
 	print_info "Running privileged user setup..."
 else
-	unset SUDO_PASSWORD
 	print_error "System setup failed! See errors above."
 	exit 1
 fi
 
-if run_with_sudo ansible-playbook playbooks/user.yml --tags privileged_user --extra-vars "user_privileged_become=false"; then
-	unset SUDO_PASSWORD
+if run_privileged ansible-playbook playbooks/user.yml --tags privileged_user --extra-vars "user_privileged_become=false"; then
 	print_info "Running user configuration..."
 else
-	unset SUDO_PASSWORD
 	print_error "Privileged user setup failed! See errors above."
 	exit 1
 fi
@@ -198,7 +221,6 @@ if ansible-playbook playbooks/user.yml --skip-tags privileged_user && ansible-pl
 	print_info "  - Verify tools: terraform --version, aws --version, gh --version"
 	print_info ""
 else
-	unset SUDO_PASSWORD
 	print_error "Setup failed! See errors above."
 	exit 1
 fi
