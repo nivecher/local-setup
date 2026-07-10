@@ -54,7 +54,7 @@
         state: directory
         owner: "{{ username }}"
         group: "{{ primary_group.stdout }}"
-        mode: '0755'
+        mode: '0750'
 
     - name: Ensure Homebrew prefix is writable by user
       ansible.builtin.file:
@@ -62,7 +62,7 @@
         state: directory
         owner: "{{ username }}"
         group: "{{ primary_group.stdout }}"
-        mode: '0755'
+        mode: '0750'
 
 - name: User Configuration
   hosts: localhost
@@ -112,7 +112,7 @@
       ansible.builtin.copy:
         src: ../config/zsh-plugins.sh
         dest: "{{ user_home }}/.zsh-plugins.sh"
-        mode: '0644'
+        mode: '0600'
         force: false
 
     # Optional Git Configuration
@@ -160,7 +160,7 @@
         regexp: "^ZSH_THEME="
         line: "ZSH_THEME=\"{{ zsh_theme }}\""
         create: true
-        mode: '0644'
+        mode: '0600'
 
     - name: Check for existing Oh My Zsh plugins in .zshrc
       ansible.builtin.command:
@@ -271,7 +271,7 @@
         path: "{{ user_home }}/.zprofile"
         marker: "# {mark} ANSIBLE MANAGED BLOCK - pyenv login"
         create: true
-        mode: '0644'
+        mode: '0600'
         block: |
           export PYENV_ROOT="${PYENV_ROOT:-$HOME/.pyenv}"
           [[ -d "$PYENV_ROOT/bin" ]] && export PATH="$PYENV_ROOT/bin:$PATH"
@@ -282,7 +282,7 @@
         path: "{{ user_home }}/.zshrc"
         marker: "# {mark} ANSIBLE MANAGED BLOCK - pyenv interactive"
         create: true
-        mode: '0644'
+        mode: '0600'
         block: |
           export PYENV_ROOT="${PYENV_ROOT:-$HOME/.pyenv}"
           [[ -d "$PYENV_ROOT/bin" ]] && export PATH="$PYENV_ROOT/bin:$PATH"
@@ -368,7 +368,7 @@
       ansible.builtin.file:
         path: "{{ user_home }}/.local/bin"
         state: directory
-        mode: '0755'
+        mode: '0700'
 
     - name: Create browser helper
       ansible.builtin.copy:
@@ -376,7 +376,7 @@
         content: |
           #!/bin/bash
           echo "Copy this URL: $1"
-        mode: '0755'
+        mode: '0700'
 
     - name: Create browser symlinks
       ansible.builtin.file:
