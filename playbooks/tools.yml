@@ -159,6 +159,15 @@
       failed_when: terragrunt_install.rc != 0
 
     # --- Homebrew tools (excluding terraform - uses tfenv) ---
+    - name: Uninstall Lightsailctl from Homebrew (using AWS binary instead)
+      ansible.builtin.command: "{{ brew_bin }} uninstall lightsailctl"
+      when:
+        - brew_check.rc == 0
+        - development_tools.lightsailctl is defined
+      register: brew_uninstall_lightsailctl
+      changed_when: brew_uninstall_lightsailctl.rc == 0
+      failed_when: false
+
     - name: Warn about unsupported exact Homebrew tool versions
       ansible.builtin.debug:
         msg: >-
@@ -168,7 +177,7 @@
       loop: "{{ development_tools | dict2items }}"
       when:
         - brew_check.rc == 0
-        - item.key not in ["terraform", "awscli", "terragrunt", "node"]
+        - item.key not in ["terraform", "awscli", "terragrunt", "node", "lightsailctl"]
         - item.value is not none
         - (item.value | string | length) > 0
 
@@ -180,7 +189,7 @@
         label: "{{ brew_formula }}"
       when:
         - brew_check.rc == 0
-        - tool_name not in ['terraform', 'awscli']
+        - tool_name not in ['terraform', 'awscli', 'lightsailctl']
         - tool_name != 'terragrunt' or tool_version is none or (tool_version | string | length) == 0
       vars:
         tool_name: "{{ item.key }}"
@@ -206,6 +215,51 @@
         brew_node_link.rc != 0 and
         'Already linked' not in ((brew_node_link.stdout | default('')) + (brew_node_link.stderr | default('')))
 
+    - name: Configure Docker CLI plugin directory for Homebrew
+      ansible.builtin.shell: |
+        set -euo pipefail
+        config_dir="{{ user_home }}/.docker"
+        config_file="${config_dir}/config.json"
+        plugin_dir="{{ brew_path }}/lib/docker/cli-plugins"
+
+        mkdir -p "$config_dir"
+        python3 - "$config_file" "$plugin_dir" <<'PY'
+        import json
+        import os
+        import sys
+
+        config_file, plugin_dir = sys.argv[1:]
+        config = {}
+
+        if os.path.exists(config_file) and os.path.getsize(config_file) > 0:
+            with open(config_file, encoding="utf-8") as handle:
+                config = json.load(handle)
+
+        plugin_dirs = config.get("cliPluginsExtraDirs", [])
+        if not isinstance(plugin_dirs, list):
+            plugin_dirs = []
+
+        if plugin_dir in plugin_dirs:
+            print("already configured")
+            sys.exit(0)
+
+        plugin_dirs.append(plugin_dir)
+        config["cliPluginsExtraDirs"] = plugin_dirs
+
+        tmp_file = f"{config_file}.tmp"
+        with open(tmp_file, "w", encoding="utf-8") as handle:
+            json.dump(config, handle, indent=2)
+            handle.write("\n")
+        os.replace(tmp_file, config_file)
+        print("configured")
+        PY
+      when:
+        - brew_check.rc == 0
+        - development_tools['docker-buildx'] is defined
+      register: docker_cli_plugin_config
+      changed_when: docker_cli_plugin_config.stdout | trim == "configured"
+      failed_when: docker_cli_plugin_config.rc != 0
+
     - name: Pin Homebrew tool
       ansible.builtin.shell: |
         set -euo pipefail
@@ -217,7 +271,7 @@
       loop: "{{ development_tools | dict2items }}"
       when:
         - brew_check.rc == 0
-        - item.key not in ["terraform", "awscli", "terragrunt"]
+        - item.key not in ["terraform", "awscli", "terragrunt", "lightsailctl"]
         - item.value is not none
         - (item.value | string | length) > 0
       vars:
@@ -261,7 +315,7 @@
 
     - name: Get Homebrew tool versions
       ansible.builtin.command: "{{ brew_bin }} list --versions {{ brew_formula }}"
-      loop: "{{ development_tools | dict2items | rejectattr('key', 'in', ['terraform', 'awscli', 'terragrunt']) | list }}"
+      loop: "{{ development_tools | dict2items | rejectattr('key', 'in', ['terraform', 'awscli', 'terragrunt', 'lightsailctl']) | list }}"
       when: brew_check.rc == 0
       vars:
         brew_formula: "{{ 'node@' ~ item.value if item.value and item.key == 'node' else item.key }}"

@@ -48,12 +48,18 @@ git_config:
 
 ## What It Installs
 
-- Base packages: `curl`, `wget`, `git`, `tree`, `gawk`, `zsh`
+- Base packages: `curl`, `wget`, `git`, `tree`, `gawk`, `zsh`, `dig`,
+  `nslookup`
+- Docker Engine: system service enabled at boot, with the configured user added
+  to the `docker` group when `docker` is configured
 - Ruby: RubyGems and headers needed by repo tooling such as pre-commit hooks
 - Shell: zsh, Oh My Zsh, and plugins from `config/zsh-plugins.sh`
 - Python: pyenv and the Python version in `vars/main.yml`
+- Terraform: `tfenv`, pinned Terraform, and `~/.terraform.d/plugin-cache`
+- Lightsailctl: AWS Linux amd64 binary at `/usr/local/bin/lightsailctl`
 - Tools: AWS CLI, Terraform, Terragrunt, GitHub CLI, jq, yq, shfmt,
-  shellcheck, Node, Go, and pre-commit based on `vars/main.yml`
+  shellcheck, Node, Go, Docker, Docker Buildx, Lightsailctl, uv, and
+  pre-commit based on `vars/main.yml`
 - SSH: `~/.ssh/id_rsa` if no key exists
 
 ## Configuration
@@ -70,6 +76,9 @@ development_tools:
   terragrunt: "0.99.2"
   node: null
   go: null
+  docker: null
+  docker-buildx: null
+  lightsailctl: null
 ```
 
 Use `null` for the current Homebrew formula. Terraform is installed through
@@ -83,7 +92,7 @@ make check      # preview changes
 make system     # system packages only
 make user       # shell, pyenv, ssh, optional git config
 make tools      # development tools only
-make validate   # show installed tool versions
+make validate   # syntax, optional lint, state tests, and tool versions
 ```
 
 ## Repo Layout
@@ -111,3 +120,7 @@ make validate   # show installed tool versions
   authenticates with `sudo -v` and runs privileged phases outside Ansible become.
 - If syntax looks wrong, run `ansible-playbook site.yml --syntax-check`.
 - After setup, restart your terminal or run `source ~/.zshrc`.
+- If `docker ps` reports a socket permission error after setup, confirm the
+  user is in the Docker group with `sudo usermod -aG docker "$USER"`, then
+  start a fresh login session or run `newgrp docker` so your shell picks up the
+  `docker` group.

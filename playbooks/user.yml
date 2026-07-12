@@ -224,6 +224,21 @@
         regexp: '^export BROWSER="\$HOME/\.local/bin/browser-helper"$'
         state: absent
 
+    # Terraform
+    - name: Create Terraform configuration directory
+      ansible.builtin.file:
+        path: "{{ user_home }}/.terraform.d"
+        state: directory
+        mode: '0700'
+      when: development_tools.terraform is defined
+
+    - name: Create Terraform plugin cache directory
+      ansible.builtin.file:
+        path: "{{ user_home }}/.terraform.d/plugin-cache"
+        state: directory
+        mode: '0700'
+      when: development_tools.terraform is defined
+
     # Homebrew
     - name: Check if Homebrew exists
       ansible.builtin.stat:

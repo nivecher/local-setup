@@ -34,6 +34,10 @@ development_tools:
   shellcheck: null
   node: null
   go: null
+  docker: null
+  docker-buildx: null
+  lightsailctl: null
+  uv: null
 
 # System packages (OS-specific, defined in roles)
 base_packages:
