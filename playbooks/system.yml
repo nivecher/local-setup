@@ -19,6 +19,35 @@
         name: "{{ base_packages }}"
         state: present
 
+    - name: Install account management tools (Debian/Ubuntu)
+      ansible.builtin.package:
+        name:
+          - passwd
+          - util-linux-extra
+        state: present
+      when: ansible_facts['os_family'] == "Debian"
+
+    - name: Install account management tools (RedHat/Fedora)
+      ansible.builtin.package:
+        name:
+          - shadow-utils
+        state: present
+      when: ansible_facts['os_family'] == "RedHat"
+
+    - name: Install DNS lookup tools (Debian/Ubuntu)
+      ansible.builtin.package:
+        name:
+          - dnsutils
+        state: present
+      when: ansible_facts['os_family'] == "Debian"
+
+    - name: Install DNS lookup tools (RedHat/Fedora)
+      ansible.builtin.package:
+        name:
+          - bind-utils
+        state: present
+      when: ansible_facts['os_family'] == "RedHat"
+
     - name: Install Homebrew bootstrap dependencies (Debian/Ubuntu)
       ansible.builtin.package:
         name:
@@ -123,3 +152,116 @@
           - rubygems
         state: present
       when: ansible_facts['os_family'] == "RedHat"
+
+    # AWS Lightsail control plugin. AWS documents Linux amd64 installation as a
+    # direct binary download to /usr/local/bin.
+    - name: Assert Lightsailctl Linux architecture is supported
+      ansible.builtin.assert:
+        that:
+          - ansible_facts['architecture'] in ['x86_64', 'amd64']
+        fail_msg: >-
+          lightsailctl is configured, but this setup currently installs the
+          AWS-provided Linux amd64 binary only.
+      when: development_tools.lightsailctl is defined
+
+    - name: Install AWS Lightsail control plugin
+      ansible.builtin.get_url:
+        url: https://s3.us-west-2.amazonaws.com/lightsailctl/latest/linux-amd64/lightsailctl
+        dest: /usr/local/bin/lightsailctl
+        owner: "{{ username }}"
+        group: "{{ username }}"
+        mode: "0750"
+      when:
+        - development_tools.lightsailctl is defined
+        - ansible_facts['architecture'] in ['x86_64', 'amd64']
+
+    # Docker Engine from distribution packages. The Docker CLI itself is also
+    # installed by playbooks/tools.yml via Homebrew for consistency with tools.
+    - name: Install Docker Engine (Debian/Ubuntu)
+      ansible.builtin.package:
+        name:
+          - docker.io
+        state: present
+      when:
+        - ansible_facts['os_family'] == "Debian"
+        - development_tools.docker is defined
+
+    - name: Install Docker Engine (RedHat/Fedora)
+      ansible.builtin.package:
+        name:
+          - moby-engine
+        state: present
+      when:
+        - ansible_facts['os_family'] == "RedHat"
+        - development_tools.docker is defined
+
+    - name: Ensure docker group exists
+      ansible.builtin.group:
+        name: docker
+        state: present
+      when: development_tools.docker is defined
+
+    - name: Add configured user to docker group (usermod -aG equivalent)
+      ansible.builtin.user:
+        name: "{{ username }}"
+        groups: docker
+        append: true
+      when: development_tools.docker is defined
+
+    - name: Ensure Docker config directory exists
+      ansible.builtin.file:
+        path: /etc/docker
+        state: directory
+        owner: root
+        group: root
+        mode: "0750"
+      when: development_tools.docker is defined
+
+    - name: Configure Docker daemon socket group
+      ansible.builtin.shell: |
+        set -euo pipefail
+        config_file="/etc/docker/daemon.json"
+
+        python3 - "$config_file" <<'PY'
+        import json
+        import os
+        import sys
+
+        config_file = sys.argv[1]
+        config = {}
+
+        if os.path.exists(config_file) and os.path.getsize(config_file) > 0:
+            with open(config_file, encoding="utf-8") as handle:
+                config = json.load(handle)
+
+        if config.get("group") == "docker":
+            print("already configured")
+            sys.exit(0)
+
+        config["group"] = "docker"
+        tmp_file = f"{config_file}.tmp"
+        with open(tmp_file, "w", encoding="utf-8") as handle:
+            json.dump(config, handle, indent=2)
+            handle.write("\n")
+        os.replace(tmp_file, config_file)
+        print("configured")
+        PY
+      when: development_tools.docker is defined
+      register: docker_daemon_config
+      changed_when: docker_daemon_config.stdout | trim == "configured"
+      failed_when: docker_daemon_config.rc != 0
+
+    - name: Enable and start Docker service
+      ansible.builtin.service:
+        name: docker
+        enabled: true
+        state: "{{ 'restarted' if docker_daemon_config.changed else 'started' }}"
+      when: development_tools.docker is defined
+
+    - name: Ensure Docker socket permissions
+      ansible.builtin.file:
+        path: /var/run/docker.sock
+        owner: root
+        group: docker
+        mode: "0660"
+      when: development_tools.docker is defined

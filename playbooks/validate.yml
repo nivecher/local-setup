@@ -1,0 +1,262 @@
+---
+- name: Validate local setup state
+  hosts: localhost
+  connection: local
+  become: false
+  gather_facts: false
+
+  vars_files:
+    - ../vars/main.yml
+
+  vars:
+    user_home: "{{ lookup('env', 'HOME') }}"
+
+  tasks:
+    - name: Validate configured user exists
+      ansible.builtin.command:
+        argv:
+          - id
+          - -u
+          - "{{ username }}"
+      register: validate_user_id
+      changed_when: false
+      failed_when: validate_user_id.rc != 0
+
+    - name: Validate configured user group memberships
+      ansible.builtin.command:
+        argv:
+          - id
+          - -nG
+          - "{{ username }}"
+      register: validate_user_groups
+      changed_when: false
+
+    - name: Validate active shell group memberships
+      ansible.builtin.command:
+        argv:
+          - id
+          - -nG
+      register: validate_active_groups
+      changed_when: false
+
+    - name: Validate Terraform plugin cache directory
+      ansible.builtin.stat:
+        path: "{{ user_home }}/.terraform.d/plugin-cache"
+      register: validate_terraform_plugin_cache
+      when: development_tools.terraform is defined
+
+    - name: Assert Terraform plugin cache directory exists
+      ansible.builtin.assert:
+        that:
+          - validate_terraform_plugin_cache.stat.exists
+          - validate_terraform_plugin_cache.stat.isdir
+        fail_msg: >-
+          Terraform plugin cache directory is missing. Run make user to create
+          ~/.terraform.d/plugin-cache.
+      when: development_tools.terraform is defined
+
+    - name: Validate dig command
+      ansible.builtin.command:
+        argv:
+          - sh
+          - -lc
+          - command -v dig
+      register: validate_dig
+      changed_when: false
+
+    - name: Validate nslookup command
+      ansible.builtin.command:
+        argv:
+          - sh
+          - -lc
+          - command -v nslookup
+      register: validate_nslookup
+      changed_when: false
+
+    - name: Validate Lightsailctl binary
+      ansible.builtin.stat:
+        path: /usr/local/bin/lightsailctl
+      register: validate_lightsailctl_binary
+      when: development_tools.lightsailctl is defined
+
+    - name: Assert Lightsailctl binary is installed
+      ansible.builtin.assert:
+        that:
+          - validate_lightsailctl_binary.stat.exists
+          - validate_lightsailctl_binary.stat.executable
+        fail_msg: >-
+          /usr/local/bin/lightsailctl is missing or is not executable. Run make
+          system to install the AWS Lightsail control plugin.
+      when: development_tools.lightsailctl is defined
+
+    - name: Validate Lightsailctl is on PATH
+      ansible.builtin.command:
+        argv:
+          - sh
+          - -lc
+          - command -v lightsailctl
+      register: validate_lightsailctl_path
+      changed_when: false
+      when: development_tools.lightsailctl is defined
+
+    - name: Validate docker group exists
+      ansible.builtin.command:
+        argv:
+          - getent
+          - group
+          - docker
+      register: validate_docker_group
+      changed_when: false
+      when: development_tools.docker is defined
+
+    - name: Assert configured user is in docker group
+      ansible.builtin.assert:
+        that:
+          - "'docker' in validate_user_groups.stdout.split()"
+        fail_msg: >-
+          {{ username }} is not in the docker group. Run:
+          sudo usermod -aG docker {{ username }}
+      when: development_tools.docker is defined
+
+    - name: Report stale active shell docker group membership
+      ansible.builtin.debug:
+        msg: >-
+          Current shell does not include the docker group yet. Persistent setup
+          is correct, but this terminal needs a fresh login session, IDE/server
+          restart, or newgrp docker before docker can run without sudo.
+      when:
+        - development_tools.docker is defined
+        - "'docker' not in validate_active_groups.stdout.split()"
+
+    - name: Validate newgrp is available for group refresh
+      ansible.builtin.command:
+        argv:
+          - sh
+          - -lc
+          - command -v newgrp
+      register: validate_newgrp
+      changed_when: false
+      failed_when: false
+      when: development_tools.docker is defined
+
+    - name: Report missing newgrp for group refresh
+      ansible.builtin.debug:
+        msg: >-
+          newgrp is not installed, so this machine cannot refresh docker group
+          membership in-place. Start a fresh login session after sudo usermod
+          -aG docker {{ username }}, or run make system to install account
+          management tools such as util-linux-extra.
+      when:
+        - development_tools.docker is defined
+        - validate_newgrp.rc != 0
+
+    - name: Validate Docker daemon config exists
+      ansible.builtin.stat:
+        path: /etc/docker/daemon.json
+      register: validate_docker_daemon_config
+      when: development_tools.docker is defined
+
+    - name: Assert Docker daemon config exists
+      ansible.builtin.assert:
+        that:
+          - validate_docker_daemon_config.stat.exists
+        fail_msg: >-
+          /etc/docker/daemon.json is missing. Run make system to configure the
+          Docker daemon socket group.
+      when: development_tools.docker is defined
+
+    - name: Read Docker daemon config
+      ansible.builtin.slurp:
+        src: /etc/docker/daemon.json
+      register: validate_docker_daemon_config_content
+      when:
+        - development_tools.docker is defined
+        - validate_docker_daemon_config.stat.exists
+
+    - name: Assert Docker daemon socket group is configured
+      ansible.builtin.assert:
+        that:
+          - >-
+            (validate_docker_daemon_config_content.content | b64decode | from_json).group
+            == "docker"
+        fail_msg: >-
+          /etc/docker/daemon.json must include "group": "docker". Run make
+          system to apply the Docker daemon configuration.
+      when:
+        - development_tools.docker is defined
+        - validate_docker_daemon_config.stat.exists
+
+    - name: Validate Docker socket exists
+      ansible.builtin.stat:
+        path: /var/run/docker.sock
+      register: validate_docker_socket
+      when: development_tools.docker is defined
+
+    - name: Assert Docker socket exists
+      ansible.builtin.assert:
+        that:
+          - validate_docker_socket.stat.exists
+        fail_msg: >-
+          /var/run/docker.sock is missing. Run make system and restart Docker.
+      when: development_tools.docker is defined
+
+    - name: Report unexpected Docker socket permissions
+      ansible.builtin.debug:
+        msg: >-
+          /var/run/docker.sock is {{ validate_docker_socket.stat.gr_name }} mode
+          {{ validate_docker_socket.stat.mode }}; expected group docker and mode
+          0660. If docker ps fails after a fresh login session, run make system
+          and restart Docker.
+      when: development_tools.docker is defined
+        and (
+          validate_docker_socket.stat.gr_name != "docker" or
+          validate_docker_socket.stat.mode != "0660"
+        )
+
+    - name: Validate Docker CLI command
+      ansible.builtin.command:
+        argv:
+          - docker
+          - --version
+      register: validate_docker_cli
+      changed_when: false
+      when: development_tools.docker is defined
+
+    - name: Validate Docker API access
+      ansible.builtin.command:
+        argv:
+          - docker
+          - ps
+      register: validate_docker_ps
+      changed_when: false
+      failed_when: validate_docker_ps.rc != 0
+      when:
+        - development_tools.docker is defined
+        - "'docker' in validate_active_groups.stdout.split()"
+
+    - name: Validate Docker Buildx command
+      ansible.builtin.command:
+        argv:
+          - docker
+          - buildx
+          - version
+      register: validate_docker_buildx
+      changed_when: false
+      when: development_tools['docker-buildx'] is defined
+
+    - name: Validate Homebrew Docker CLI plugin config
+      ansible.builtin.slurp:
+        src: "{{ user_home }}/.docker/config.json"
+      register: validate_docker_cli_config
+      when: development_tools['docker-buildx'] is defined
+
+    - name: Assert Homebrew Docker CLI plugin config
+      ansible.builtin.assert:
+        that:
+          - >-
+            homebrew_install_path ~ "/lib/docker/cli-plugins" in
+            ((validate_docker_cli_config.content | b64decode | from_json).cliPluginsExtraDirs | default([]))
+        fail_msg: >-
+          ~/.docker/config.json must include the Homebrew Docker CLI plugin
+          directory. Run make tools to configure Docker Buildx.
+      when: development_tools['docker-buildx'] is defined
