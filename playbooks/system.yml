@@ -168,9 +168,9 @@
       ansible.builtin.get_url:
         url: https://s3.us-west-2.amazonaws.com/lightsailctl/latest/linux-amd64/lightsailctl
         dest: /usr/local/bin/lightsailctl
-        owner: root
-        group: root
-        mode: "0755"
+        owner: "{{ username }}"
+        group: "{{ username }}"
+        mode: "0750"
       when:
         - development_tools.lightsailctl is defined
         - ansible_facts['architecture'] in ['x86_64', 'amd64']
@@ -214,7 +214,7 @@
         state: directory
         owner: root
         group: root
-        mode: "0755"
+        mode: "0750"
       when: development_tools.docker is defined
 
     - name: Configure Docker daemon socket group
